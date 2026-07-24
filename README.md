@@ -23,9 +23,32 @@ A white-label, single-page **AI Website Builder** UI — dark theme, glassmorphi
 The front-end calls these endpoints and degrades gracefully to a built-in mock engine when they're absent, so the UI is fully demoable before the backend is wired up:
 
 ```
-POST /api/generate-code   { prompt, projectId, userId }  →  { code }
-POST /api/deploy-vercel   { projectId, userId, code }    →  { url }
+POST /api/generate-code      { prompt, projectId, userId }  →  { code }
+POST /api/deploy-vercel      { projectId, userId, code }    →  { url }
+POST /api/billing/subscribe  { planId, userId }             →  { checkoutUrl } | { subscription }
+GET  /api/billing/status     ?userId=…                      →  { subscription }
+POST /api/billing/cancel     { userId, subscriptionId }     →  { subscription }
+POST /api/billing/webhook    (gateway → server)             →  { ok }
 ```
+
+## Payment automation (Autopay)
+
+Recurring billing is fully automated — the user pays once to authorize a mandate, and every renewal after that is charged automatically:
+
+1. **Subscribe** — the plan badge (or running out of credits) opens the Billing modal. Choosing *Pro Monthly ₹499* or *Pro Yearly ₹4,999* calls `POST /api/billing/subscribe`.
+2. **Mandate setup** — in live mode the server creates a Razorpay Subscription and returns its hosted `checkoutUrl`, where the user authorizes a **UPI Autopay / card e-mandate**. The front-end polls `GET /api/billing/status` until it flips to active.
+3. **Auto-renewal** — the gateway auto-debits each cycle and fires `subscription.charged` to `POST /api/billing/webhook` (HMAC-verified), which extends the plan — zero manual payments.
+4. **Failure & cancel** — `subscription.halted` / `.cancelled` webhooks turn Autopay off; **Cancel Autopay** in the modal cancels at cycle end, so Pro stays active for the period already paid.
+
+Live mode needs these env vars (demo mode works without them — subscriptions activate instantly so the whole flow is testable):
+
+```
+RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET      API keys
+RAZORPAY_PLAN_PRO_MONTHLY / _PRO_YEARLY    plan ids created in the dashboard
+RAZORPAY_WEBHOOK_SECRET                    webhook signing secret
+```
+
+The gateway is server-side only — per the white-label rules, no payment-provider branding appears anywhere in the UI ("Secure UPI Autopay / card e-mandate").
 
 ## Run it
 
