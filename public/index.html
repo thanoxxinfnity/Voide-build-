@@ -1,0 +1,1439 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Web Studio — Build Full Websites with One Prompt</title>
+  <meta name="description" content="AI Web Studio: generate, refine, preview and deploy complete websites from a single prompt." />
+
+  <!-- Tailwind CSS — compiled locally (public/tailwind.css), no external CDN dependency -->
+  <link rel="stylesheet" href="tailwind.css" />
+
+  <style>
+    /* ---------- Base ---------- */
+    :root { color-scheme: dark; }
+    html, body { height: 100%; }
+    body {
+      background:
+        radial-gradient(1100px 520px at 85% -10%, rgba(99, 102, 241, .16), transparent 60%),
+        radial-gradient(900px 480px at -10% 110%, rgba(6, 182, 212, .10), transparent 60%),
+        #07070d;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    ::selection { background: rgba(99, 102, 241, .35); }
+
+    /* ---------- Glassmorphism ---------- */
+    .glass {
+      background: linear-gradient(160deg, rgba(255,255,255,.055), rgba(255,255,255,.02));
+      border: 1px solid rgba(255,255,255,.08);
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+    }
+    .glass-strong {
+      background: linear-gradient(160deg, rgba(255,255,255,.09), rgba(255,255,255,.03));
+      border: 1px solid rgba(255,255,255,.12);
+      backdrop-filter: blur(24px) saturate(160%);
+      -webkit-backdrop-filter: blur(24px) saturate(160%);
+    }
+
+    /* ---------- Micro-interactions ---------- */
+    .btn { transition: transform .15s ease, box-shadow .2s ease, background-color .2s ease, border-color .2s ease, opacity .2s ease; }
+    .btn:hover:not(:disabled) { transform: translateY(-1px); }
+    .btn:active:not(:disabled) { transform: translateY(0) scale(.98); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #6366f1 0%, #7c3aed 55%, #06b6d4 130%);
+      box-shadow: 0 8px 24px -8px rgba(99,102,241,.55), inset 0 1px 0 rgba(255,255,255,.18);
+    }
+    .btn-primary:hover:not(:disabled) { box-shadow: 0 12px 32px -8px rgba(99,102,241,.7), inset 0 1px 0 rgba(255,255,255,.22); }
+
+    .chip { transition: transform .15s ease, border-color .2s ease, background-color .2s ease; }
+    .chip:hover { transform: translateY(-2px); border-color: rgba(129,140,248,.55); background: rgba(99,102,241,.12); }
+    .chip:active { transform: scale(.97); }
+
+    .grad-text {
+      background: linear-gradient(92deg, #e0e7ff 0%, #a5b4fc 38%, #22d3ee 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+
+    .hero-grid {
+      background-image:
+        linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: radial-gradient(ellipse 75% 65% at 50% 38%, black 30%, transparent 75%);
+      -webkit-mask-image: radial-gradient(ellipse 75% 65% at 50% 38%, black 30%, transparent 75%);
+    }
+
+    .prompt-glow:focus-within {
+      border-color: rgba(129,140,248,.6);
+      box-shadow: 0 0 0 4px rgba(99,102,241,.14), 0 20px 60px -20px rgba(99,102,241,.35);
+    }
+
+    /* ---------- Scrollbars ---------- */
+    .nice-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+    .nice-scroll::-webkit-scrollbar-track { background: transparent; }
+    .nice-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 8px; }
+    .nice-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.22); }
+
+    /* ---------- Terminal / log entries ---------- */
+    .log-line { animation: fadeUp .35s ease both; }
+    .log-dot { box-shadow: 0 0 10px currentColor; }
+
+    /* ---------- Code viewer ---------- */
+    .code-area { tab-size: 2; }
+    .tok-tag  { color: #f472b6; }
+    .tok-attr { color: #a5b4fc; }
+    .tok-str  { color: #86efac; }
+    .tok-com  { color: #64748b; font-style: italic; }
+
+    /* ---------- Typing dots ---------- */
+    .typing-dot { animation: blink 1.2s infinite; }
+    .typing-dot:nth-child(2) { animation-delay: .2s; }
+    .typing-dot:nth-child(3) { animation-delay: .4s; }
+
+    /* ---------- View transitions ---------- */
+    .view-hidden { display: none !important; }
+
+    /* ---------- Progress shimmer ---------- */
+    .shimmer {
+      background: linear-gradient(90deg, rgba(99,102,241,.9), rgba(34,211,238,.9), rgba(99,102,241,.9));
+      background-size: 200% 100%;
+      animation: shimmerMove 1.6s linear infinite;
+    }
+    @keyframes shimmerMove { 0% { background-position: 0% 0; } 100% { background-position: -200% 0; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+
+<body class="font-sans text-slate-200 overflow-hidden">
+
+  <!-- ============================================================ -->
+  <!-- HEADER / TOP NAVIGATION                                      -->
+  <!-- ============================================================ -->
+  <header class="glass relative z-40 flex h-16 shrink-0 items-center justify-between gap-3 border-x-0 border-t-0 px-4 sm:px-6">
+    <!-- Logo + title -->
+    <button id="btn-home" class="btn group flex items-center gap-3" title="AI Web Studio — Home">
+      <span class="relative grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand-500 via-violet-600 to-accent-500 shadow-lg shadow-brand-500/30">
+        <!-- sparkles icon -->
+        <svg class="h-5 w-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/>
+          <path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/>
+        </svg>
+        <span class="absolute -inset-1 -z-10 rounded-xl bg-brand-500/30 blur-md transition-opacity group-hover:opacity-100 opacity-0"></span>
+      </span>
+      <span class="text-left leading-tight">
+        <span class="block text-[15px] font-bold tracking-tight text-white">AI Web Studio</span>
+        <span class="hidden text-[11px] font-medium text-slate-400 sm:block">Prompt → Website, instantly</span>
+      </span>
+    </button>
+
+    <!-- Right cluster -->
+    <div class="flex items-center gap-2 sm:gap-3">
+      <!-- Plan / credits badge -->
+      <div id="plan-badge" class="glass hidden items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-semibold sm:flex" title="Your current plan">
+        <svg class="h-3.5 w-3.5 text-amber-300" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4.09 12.11a.6.6 0 0 0 .45 1H10l-1 9 8.91-10.11a.6.6 0 0 0-.45-1H14l-1-9z"/></svg>
+        <span class="text-amber-200">PRO Plan</span>
+        <span class="mx-1 h-3 w-px bg-white/15"></span>
+        <span class="text-slate-300">Credits: <span id="credits-count" class="font-bold text-white">10</span></span>
+      </div>
+
+      <!-- New Project -->
+      <button id="btn-new-project" class="btn glass flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        <span class="hidden md:inline">New Project</span>
+      </button>
+
+      <!-- Download Code -->
+      <button id="btn-download" class="btn glass flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10" disabled>
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+        <span class="hidden md:inline">Download Code</span>
+      </button>
+
+      <!-- Deploy Live -->
+      <button id="btn-deploy" class="btn btn-primary flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-white" disabled>
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+        <span class="hidden sm:inline">Deploy Live</span>
+        <span class="sm:hidden">Deploy</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ============================================================ -->
+  <!-- VIEW 1 — HERO / INITIAL PROMPT STATE                         -->
+  <!-- ============================================================ -->
+  <main id="view-hero" class="relative flex h-[calc(100vh-4rem)] flex-col items-center overflow-y-auto nice-scroll px-4">
+    <div class="hero-grid pointer-events-none absolute inset-0"></div>
+
+    <!-- Ambient orbs -->
+    <div class="pointer-events-none absolute left-[12%] top-[18%] h-56 w-56 rounded-full bg-brand-500/20 blur-[100px] animate-float-slow"></div>
+    <div class="pointer-events-none absolute right-[10%] top-[42%] h-64 w-64 rounded-full bg-accent-500/15 blur-[110px] animate-float-slow" style="animation-delay:-4s"></div>
+
+    <div class="relative z-10 mx-auto flex w-full max-w-3xl flex-col items-center pt-14 pb-16 sm:pt-20">
+      <!-- Eyebrow pill -->
+      <div class="glass animate-fade-up flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300">
+        <span class="relative flex h-2 w-2">
+          <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60"></span>
+          <span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
+        </span>
+        AI engine online — generation ready
+      </div>
+
+      <!-- Headline -->
+      <h1 class="animate-fade-up mt-7 text-center text-4xl font-extrabold tracking-tight sm:text-6xl" style="animation-delay:.08s">
+        <span class="text-white">Build Full Websites</span><br />
+        <span class="grad-text">with One Prompt</span>
+      </h1>
+      <p class="animate-fade-up mt-5 max-w-xl text-center text-base leading-relaxed text-slate-400 sm:text-lg" style="animation-delay:.16s">
+        Describe your idea. Our AI engine designs, codes and previews a complete,
+        production-ready website in seconds — then deploys it live with one click.
+      </p>
+
+      <!-- Prompt box -->
+      <div class="animate-fade-up mt-10 w-full" style="animation-delay:.24s">
+        <div class="glass-strong prompt-glow rounded-2xl p-2 transition-all duration-300">
+          <textarea
+            id="hero-prompt"
+            rows="4"
+            placeholder="e.g. A modern SaaS landing page for a project-management tool, with pricing tiers, testimonials and a dark hero section…"
+            class="code-area w-full resize-none bg-transparent px-4 py-3 text-[15px] leading-relaxed text-slate-100 placeholder-slate-500 outline-none"
+          ></textarea>
+          <div class="flex items-center justify-between gap-3 px-2 pb-1">
+            <div class="flex items-center gap-2 pl-2 text-[11px] text-slate-500">
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              Private &amp; white-label — your brand only
+            </div>
+            <button id="btn-generate" class="btn btn-primary flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13 2-2 9h5l-3 11 8-13h-6l3-7z"/></svg>
+              Generate App
+            </button>
+          </div>
+        </div>
+        <p class="mt-2 text-center text-[11px] text-slate-500"><kbd class="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono">Ctrl</kbd> + <kbd class="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono">Enter</kbd> to generate</p>
+      </div>
+
+      <!-- Template chips -->
+      <div class="animate-fade-up mt-8 w-full" style="animation-delay:.32s">
+        <p class="mb-3 text-center text-xs font-medium uppercase tracking-widest text-slate-500">Start from an idea</p>
+        <div id="chip-row" class="flex flex-wrap items-center justify-center gap-2.5">
+          <!-- chips injected by JS -->
+        </div>
+      </div>
+
+      <!-- Feature strip -->
+      <div class="animate-fade-up mt-14 grid w-full grid-cols-1 gap-3 sm:grid-cols-3" style="animation-delay:.4s">
+        <div class="glass rounded-2xl p-4">
+          <div class="mb-2 grid h-9 w-9 place-items-center rounded-lg bg-brand-500/15 text-brand-300">
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13 2-2 9h5l-3 11 8-13h-6l3-7z"/></svg>
+          </div>
+          <h3 class="text-sm font-semibold text-white">Instant generation</h3>
+          <p class="mt-1 text-xs leading-relaxed text-slate-400">Full HTML, styling and interactions generated from a single prompt.</p>
+        </div>
+        <div class="glass rounded-2xl p-4">
+          <div class="mb-2 grid h-9 w-9 place-items-center rounded-lg bg-accent-500/15 text-accent-400">
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          </div>
+          <h3 class="text-sm font-semibold text-white">Refine with chat</h3>
+          <p class="mt-1 text-xs leading-relaxed text-slate-400">Ask for edits in plain language — colors, sections, copy, anything.</p>
+        </div>
+        <div class="glass rounded-2xl p-4">
+          <div class="mb-2 grid h-9 w-9 place-items-center rounded-lg bg-emerald-500/15 text-emerald-400">
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          </div>
+          <h3 class="text-sm font-semibold text-white">One-click deploy</h3>
+          <p class="mt-1 text-xs leading-relaxed text-slate-400">Push your site live to a shareable URL the moment it's ready.</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============================================================ -->
+  <!-- VIEW 2 — INTERACTIVE WORKSPACE (SPLIT SCREEN)                -->
+  <!-- ============================================================ -->
+  <main id="view-workspace" class="view-hidden h-[calc(100vh-4rem)] gap-3 p-3 md:flex">
+
+    <!-- Mobile panel switcher -->
+    <div class="mb-2 flex gap-2 md:hidden">
+      <button id="m-tab-chat" class="btn glass flex-1 rounded-xl px-3 py-2 text-sm font-semibold text-white">💬 Chat</button>
+      <button id="m-tab-output" class="btn glass flex-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-400">🖥️ Output</button>
+    </div>
+
+    <!-- ---------- LEFT PANEL : CHAT & BUILD LOGS ---------- -->
+    <section id="panel-chat" class="glass flex h-[calc(100%-3.25rem)] flex-col overflow-hidden rounded-2xl md:h-full md:w-[380px] md:shrink-0">
+      <!-- Panel header -->
+      <div class="flex items-center justify-between border-b border-white/10 px-4 py-3">
+        <div class="flex items-center gap-2.5">
+          <span class="grid h-7 w-7 place-items-center rounded-lg bg-brand-500/15 text-brand-300">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </span>
+          <div>
+            <h2 class="text-sm font-semibold text-white">Build Console</h2>
+            <p class="text-[11px] text-slate-500" id="project-label">Project: —</p>
+          </div>
+        </div>
+        <span id="build-status" class="flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-medium text-slate-400">
+          <span class="log-dot h-1.5 w-1.5 rounded-full bg-slate-500"></span> Idle
+        </span>
+      </div>
+
+      <!-- Chat / log stream -->
+      <div id="chat-stream" class="nice-scroll flex-1 space-y-3 overflow-y-auto px-4 py-4">
+        <!-- messages & logs injected by JS -->
+      </div>
+
+      <!-- Follow-up input -->
+      <div class="border-t border-white/10 p-3">
+        <div class="glass prompt-glow flex items-end gap-2 rounded-xl p-1.5 transition-all">
+          <textarea
+            id="refine-prompt"
+            rows="1"
+            placeholder="Request an edit… e.g. “Make the hero purple and add a pricing section”"
+            class="nice-scroll max-h-32 flex-1 resize-none bg-transparent px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none"
+          ></textarea>
+          <button id="btn-refine" class="btn btn-primary grid h-9 w-9 shrink-0 place-items-center rounded-lg text-white" title="Send edit request">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></svg>
+          </button>
+        </div>
+        <p class="mt-1.5 px-1 text-[10px] text-slate-600">Enter to send · Shift+Enter for a new line</p>
+      </div>
+    </section>
+
+    <!-- ---------- RIGHT PANEL : PREVIEW & CODE ---------- -->
+    <section id="panel-output" class="glass hidden h-[calc(100%-3.25rem)] flex-1 flex-col overflow-hidden rounded-2xl md:flex md:h-full">
+      <!-- Tab bar -->
+      <div class="flex items-center justify-between gap-3 border-b border-white/10 px-3 py-2">
+        <div class="flex items-center gap-1 rounded-xl bg-black/25 p-1">
+          <button id="tab-preview" data-tab="preview" class="tab-btn btn flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-sm font-semibold">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+            Live Preview
+          </button>
+          <button id="tab-code" data-tab="code" class="tab-btn btn flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-sm font-semibold">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg>
+            Code Editor
+          </button>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <!-- Viewport toggles (preview only) -->
+          <div id="viewport-toggles" class="hidden items-center gap-1 rounded-xl bg-black/25 p-1 lg:flex">
+            <button data-vw="100%" class="vw-btn btn rounded-lg p-1.5 text-slate-400 hover:text-white" title="Desktop width">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            </button>
+            <button data-vw="768px" class="vw-btn btn rounded-lg p-1.5 text-slate-400 hover:text-white" title="Tablet width">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+            </button>
+            <button data-vw="390px" class="vw-btn btn rounded-lg p-1.5 text-slate-400 hover:text-white" title="Mobile width">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+            </button>
+          </div>
+
+          <button id="btn-refresh-preview" class="btn glass rounded-lg p-2 text-slate-300 hover:text-white" title="Reload preview">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+          </button>
+
+          <button id="btn-copy" class="btn glass hidden items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-200 hover:text-white">
+            <svg id="copy-icon" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span id="copy-label">Copy Code</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Preview pane -->
+      <div id="pane-preview" class="relative flex-1 overflow-hidden bg-[#0d0d17] p-0">
+        <!-- Empty / generating overlay -->
+        <div id="preview-overlay" class="absolute inset-0 z-10 grid place-items-center bg-ink-900/80 backdrop-blur-sm">
+          <div class="flex flex-col items-center gap-4 text-center">
+            <div class="relative">
+              <div class="h-14 w-14 animate-spin-slow rounded-full border-2 border-white/10 border-t-brand-400"></div>
+              <svg class="absolute inset-0 m-auto h-6 w-6 text-brand-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+            </div>
+            <div>
+              <p id="overlay-title" class="text-sm font-semibold text-white">Generating your website…</p>
+              <p id="overlay-sub" class="mt-1 text-xs text-slate-400">The AI engine is writing your code</p>
+            </div>
+            <div class="h-1 w-52 overflow-hidden rounded-full bg-white/10">
+              <div id="overlay-bar" class="shimmer h-full w-1/3 rounded-full"></div>
+            </div>
+          </div>
+        </div>
+        <div class="mx-auto h-full transition-all duration-300" id="preview-frame-wrap" style="width:100%">
+          <iframe
+            id="preview-iframe"
+            title="Live preview of your generated website"
+            class="h-full w-full border-0 bg-white"
+            sandbox="allow-scripts allow-forms allow-modals allow-popups"
+          ></iframe>
+        </div>
+      </div>
+
+      <!-- Code pane -->
+      <div id="pane-code" class="view-hidden flex-1 overflow-hidden bg-[#0a0a12]">
+        <div class="flex h-full">
+          <!-- Faux file tree -->
+          <div class="hidden w-44 shrink-0 border-r border-white/5 p-3 lg:block">
+            <p class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">Project files</p>
+            <div class="flex items-center gap-2 rounded-lg bg-brand-500/15 px-2.5 py-1.5 text-xs font-medium text-brand-200">
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/></svg>
+              index.html
+            </div>
+          </div>
+          <pre id="code-view" class="code-area nice-scroll m-0 flex-1 overflow-auto p-5 font-mono text-[12.5px] leading-relaxed text-slate-300"><code id="code-content">&lt;!-- Your generated code will appear here --&gt;</code></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================================================ -->
+  <!-- DEPLOY MODAL                                                 -->
+  <!-- ============================================================ -->
+  <div id="deploy-modal" class="view-hidden fixed inset-0 z-50 grid place-items-center p-4">
+    <div id="deploy-backdrop" class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+    <div class="glass-strong animate-pop relative w-full max-w-md rounded-2xl p-6">
+      <button id="btn-close-modal" class="btn absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" title="Close">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+
+      <!-- State: deploying -->
+      <div id="deploy-state-loading" class="flex flex-col items-center py-4 text-center">
+        <div class="relative mb-5">
+          <div class="h-16 w-16 animate-spin-slow rounded-full border-2 border-white/10 border-t-accent-400"></div>
+          <svg class="absolute inset-0 m-auto h-7 w-7 text-accent-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg>
+        </div>
+        <h3 class="text-lg font-bold text-white">Deploying your site…</h3>
+        <p id="deploy-step" class="mt-1.5 text-sm text-slate-400">Packaging build output</p>
+        <div class="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+          <div id="deploy-bar" class="shimmer h-full w-1/2 rounded-full"></div>
+        </div>
+      </div>
+
+      <!-- State: success -->
+      <div id="deploy-state-success" class="view-hidden flex flex-col items-center py-2 text-center">
+        <div class="mb-4 grid h-16 w-16 place-items-center rounded-full bg-emerald-500/15">
+          <svg class="h-8 w-8 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+        </div>
+        <h3 class="text-lg font-bold text-white">🎉 Your site is live!</h3>
+        <p class="mt-1.5 text-sm text-slate-400">Deployment finished successfully. Share your link:</p>
+
+        <div class="mt-4 flex w-full items-center gap-2 rounded-xl border border-white/10 bg-black/30 p-2 pl-3">
+          <svg class="h-4 w-4 shrink-0 text-accent-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          <a id="deploy-url" href="#" target="_blank" rel="noopener" class="flex-1 truncate text-left text-sm font-medium text-accent-400 hover:underline">—</a>
+          <button id="btn-copy-url" class="btn glass shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-200 hover:text-white">Copy</button>
+        </div>
+
+        <div class="mt-5 flex w-full gap-2">
+          <button id="btn-visit-site" class="btn btn-primary flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+            Visit Site
+          </button>
+          <button id="btn-done-modal" class="btn glass rounded-xl px-4 py-2.5 text-sm font-medium text-slate-200 hover:text-white">Done</button>
+        </div>
+      </div>
+
+      <!-- State: error -->
+      <div id="deploy-state-error" class="view-hidden flex flex-col items-center py-2 text-center">
+        <div class="mb-4 grid h-16 w-16 place-items-center rounded-full bg-rose-500/15">
+          <svg class="h-8 w-8 text-rose-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+        </div>
+        <h3 class="text-lg font-bold text-white">Deployment failed</h3>
+        <p id="deploy-error-msg" class="mt-1.5 text-sm text-slate-400">Something went wrong while publishing your site.</p>
+        <button id="btn-retry-deploy" class="btn btn-primary mt-5 rounded-xl px-5 py-2.5 text-sm font-semibold text-white">Try Again</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-root" class="pointer-events-none fixed bottom-5 left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2"></div>
+
+  <script>
+  'use strict';
+
+  /* ============================================================
+   *  AI WEB STUDIO — front-end application
+   *  Plugs into an Express backend exposing:
+   *    POST /api/generate-code   { prompt, projectId, userId } -> { code | html }
+   *    POST /api/deploy-vercel   { projectId, userId, code }   -> { url }
+   *  When the backend is unreachable, a local mock engine keeps
+   *  the full UX working so the UI can be demoed standalone.
+   * ============================================================ */
+
+  // ---------- Configuration ----------
+  const API = {
+    generate: '/api/generate-code',
+    deploy:   '/api/deploy-vercel',
+  };
+  const GENERATION_COST = 1; // credits per generation
+
+  // ---------- Session identity ----------
+  const uid = () => 'u_' + Math.random().toString(36).slice(2, 10);
+  const pid = () => 'proj_' + Math.random().toString(36).slice(2, 8);
+
+  const state = {
+    userId: localStorage.getItem('aws_user_id') || (() => {
+      const v = uid(); localStorage.setItem('aws_user_id', v); return v;
+    })(),
+    projectId: null,
+    projectName: null,
+    code: '',
+    credits: Number(localStorage.getItem('aws_credits') ?? 10),
+    busy: false,
+    deployedUrl: null,
+    activeTab: 'preview',
+  };
+
+  // ---------- DOM shortcuts ----------
+  const $ = (sel) => document.querySelector(sel);
+  const el = {
+    viewHero:      $('#view-hero'),
+    viewWorkspace: $('#view-workspace'),
+    heroPrompt:    $('#hero-prompt'),
+    btnGenerate:   $('#btn-generate'),
+    chipRow:       $('#chip-row'),
+    chatStream:    $('#chat-stream'),
+    refinePrompt:  $('#refine-prompt'),
+    btnRefine:     $('#btn-refine'),
+    buildStatus:   $('#build-status'),
+    projectLabel:  $('#project-label'),
+    tabPreview:    $('#tab-preview'),
+    tabCode:       $('#tab-code'),
+    panePreview:   $('#pane-preview'),
+    paneCode:      $('#pane-code'),
+    iframe:        $('#preview-iframe'),
+    frameWrap:     $('#preview-frame-wrap'),
+    overlay:       $('#preview-overlay'),
+    overlayTitle:  $('#overlay-title'),
+    overlaySub:    $('#overlay-sub'),
+    codeContent:   $('#code-content'),
+    btnCopy:       $('#btn-copy'),
+    copyLabel:     $('#copy-label'),
+    btnDownload:   $('#btn-download'),
+    btnDeploy:     $('#btn-deploy'),
+    btnNewProject: $('#btn-new-project'),
+    btnHome:       $('#btn-home'),
+    btnRefresh:    $('#btn-refresh-preview'),
+    creditsCount:  $('#credits-count'),
+    planBadge:     $('#plan-badge'),
+    viewportToggles: $('#viewport-toggles'),
+    // modal
+    modal:         $('#deploy-modal'),
+    modalBackdrop: $('#deploy-backdrop'),
+    stLoading:     $('#deploy-state-loading'),
+    stSuccess:     $('#deploy-state-success'),
+    stError:       $('#deploy-state-error'),
+    deployStep:    $('#deploy-step'),
+    deployUrl:     $('#deploy-url'),
+    deployErrMsg:  $('#deploy-error-msg'),
+    btnCloseModal: $('#btn-close-modal'),
+    btnDoneModal:  $('#btn-done-modal'),
+    btnVisit:      $('#btn-visit-site'),
+    btnCopyUrl:    $('#btn-copy-url'),
+    btnRetry:      $('#btn-retry-deploy'),
+    // mobile
+    mTabChat:      $('#m-tab-chat'),
+    mTabOutput:    $('#m-tab-output'),
+    panelChat:     $('#panel-chat'),
+    panelOutput:   $('#panel-output'),
+    toastRoot:     $('#toast-root'),
+  };
+
+  // ---------- Template prompt chips ----------
+  const TEMPLATES = [
+    { icon: '🚀', label: 'SaaS Landing Page',  prompt: 'A modern SaaS landing page for a team productivity app called "FlowDesk" — dark hero with gradient headline, feature grid, 3-tier pricing table, testimonials and a footer with newsletter signup.' },
+    { icon: '🎨', label: 'Portfolio Site',      prompt: 'A sleek personal portfolio for a product designer — full-screen intro, selected works gallery with hover effects, about section with skill bars, and a contact form.' },
+    { icon: '📈', label: 'Crypto Dashboard',    prompt: 'A dark crypto analytics dashboard — sidebar navigation, stat cards for portfolio value and 24h change, a market table of top coins with sparkline-style trends, and a watchlist panel.' },
+    { icon: '🛍️', label: 'E-commerce Store',    prompt: 'A minimal e-commerce storefront for a sneaker brand — sticky navbar with cart badge, hero banner with featured drop, product grid with prices and add-to-cart buttons, and a promo strip.' },
+    { icon: '🍜', label: 'Restaurant Site',     prompt: 'A warm single-page website for a ramen restaurant — hero with reservation CTA, menu section grouped by category, gallery strip, opening hours and a map/contact footer.' },
+    { icon: '📰', label: 'Blog / Magazine',     prompt: 'A clean editorial blog homepage — masthead, featured article hero, 3-column latest posts grid with tags and reading time, and a subscribe banner.' },
+  ];
+
+  function renderChips() {
+    el.chipRow.innerHTML = '';
+    TEMPLATES.forEach(({ icon, label, prompt }) => {
+      const b = document.createElement('button');
+      b.className = 'chip glass flex items-center gap-2 rounded-full px-4 py-2 text-[13px] font-medium text-slate-300 hover:text-white';
+      b.innerHTML = `<span>${icon}</span> ${label}`;
+      b.addEventListener('click', () => {
+        el.heroPrompt.value = prompt;
+        el.heroPrompt.focus();
+        el.heroPrompt.dispatchEvent(new Event('input'));
+      });
+      el.chipRow.appendChild(b);
+    });
+  }
+
+  // ---------- Toasts ----------
+  function toast(msg, kind = 'info') {
+    const colors = { info: 'text-slate-200', success: 'text-emerald-300', error: 'text-rose-300' };
+    const t = document.createElement('div');
+    t.className = `glass-strong animate-pop pointer-events-auto rounded-xl px-4 py-2.5 text-sm font-medium ${colors[kind]}`;
+    t.textContent = msg;
+    el.toastRoot.appendChild(t);
+    setTimeout(() => {
+      t.style.transition = 'opacity .3s, transform .3s';
+      t.style.opacity = '0';
+      t.style.transform = 'translateY(8px)';
+      setTimeout(() => t.remove(), 320);
+    }, 2600);
+  }
+
+  // ---------- Credits ----------
+  function renderCredits() {
+    el.creditsCount.textContent = state.credits;
+    localStorage.setItem('aws_credits', String(state.credits));
+  }
+
+  // ---------- Chat / log rendering ----------
+  function addUserMessage(text) {
+    const wrap = document.createElement('div');
+    wrap.className = 'log-line flex justify-end';
+    wrap.innerHTML = `
+      <div class="max-w-[85%] rounded-2xl rounded-br-md bg-gradient-to-br from-brand-500/90 to-violet-600/90 px-4 py-2.5 text-sm leading-relaxed text-white shadow-lg shadow-brand-500/20"></div>`;
+    wrap.firstElementChild.textContent = text;
+    el.chatStream.appendChild(wrap);
+    scrollChat();
+  }
+
+  function addAssistantMessage(text) {
+    const wrap = document.createElement('div');
+    wrap.className = 'log-line flex justify-start';
+    wrap.innerHTML = `
+      <div class="flex max-w-[90%] gap-2.5">
+        <span class="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-accent-500 text-white">
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+        </span>
+        <div class="glass rounded-2xl rounded-tl-md px-4 py-2.5 text-sm leading-relaxed text-slate-200"></div>
+      </div>`;
+    wrap.querySelector('.glass').textContent = text;
+    el.chatStream.appendChild(wrap);
+    scrollChat();
+  }
+
+  function createLogBlock() {
+    const wrap = document.createElement('div');
+    wrap.className = 'log-line ml-9 space-y-1.5 rounded-xl border border-white/10 bg-black/30 px-3.5 py-3 font-mono text-[11.5px]';
+    el.chatStream.appendChild(wrap);
+    scrollChat();
+    return wrap;
+  }
+
+  function addLogLine(block, text, kind = 'run') {
+    const colors = {
+      run:  ['text-brand-300', 'bg-brand-400'],
+      ok:   ['text-emerald-300', 'bg-emerald-400'],
+      warn: ['text-amber-300', 'bg-amber-400'],
+      err:  ['text-rose-300', 'bg-rose-400'],
+    };
+    const [txt, dot] = colors[kind] || colors.run;
+    const row = document.createElement('div');
+    row.className = `log-line flex items-center gap-2 ${txt}`;
+    row.innerHTML = `<span class="log-dot h-1.5 w-1.5 shrink-0 rounded-full ${dot}"></span><span></span>`;
+    row.lastElementChild.textContent = text;
+    block.appendChild(row);
+    scrollChat();
+    return row;
+  }
+
+  function addTypingIndicator() {
+    const wrap = document.createElement('div');
+    wrap.id = 'typing-indicator';
+    wrap.className = 'log-line ml-9 flex items-center gap-1.5 px-1 text-slate-500';
+    wrap.innerHTML = `
+      <span class="typing-dot h-1.5 w-1.5 rounded-full bg-slate-400"></span>
+      <span class="typing-dot h-1.5 w-1.5 rounded-full bg-slate-400"></span>
+      <span class="typing-dot h-1.5 w-1.5 rounded-full bg-slate-400"></span>`;
+    el.chatStream.appendChild(wrap);
+    scrollChat();
+  }
+  function removeTypingIndicator() { $('#typing-indicator')?.remove(); }
+
+  function scrollChat() { el.chatStream.scrollTop = el.chatStream.scrollHeight; }
+
+  function setBuildStatus(label, kind = 'idle') {
+    const map = {
+      idle:     ['bg-slate-500', 'text-slate-400'],
+      building: ['bg-brand-400', 'text-brand-300'],
+      ok:       ['bg-emerald-400', 'text-emerald-300'],
+      err:      ['bg-rose-400', 'text-rose-300'],
+    };
+    const [dot, txt] = map[kind];
+    el.buildStatus.className = `flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-medium ${txt}`;
+    el.buildStatus.innerHTML = `<span class="log-dot h-1.5 w-1.5 rounded-full ${dot} ${kind === 'building' ? 'animate-pulse' : ''}"></span> ${label}`;
+  }
+
+  // ---------- Views ----------
+  function showWorkspace() {
+    el.viewHero.classList.add('view-hidden');
+    el.viewWorkspace.classList.remove('view-hidden');
+    el.viewWorkspace.classList.add('flex', 'flex-col', 'md:flex-row');
+  }
+  function showHero() {
+    el.viewWorkspace.classList.add('view-hidden');
+    el.viewHero.classList.remove('view-hidden');
+  }
+
+  // ---------- Tabs (Preview / Code) ----------
+  function setTab(tab) {
+    state.activeTab = tab;
+    const activeCls   = ['bg-white/10', 'text-white'];
+    const inactiveCls = ['text-slate-400'];
+    [el.tabPreview, el.tabCode].forEach((btn) => {
+      const on = btn.dataset.tab === tab;
+      btn.classList.remove(...activeCls, ...inactiveCls);
+      btn.classList.add(...(on ? activeCls : inactiveCls));
+    });
+    el.panePreview.classList.toggle('view-hidden', tab !== 'preview');
+    el.paneCode.classList.toggle('view-hidden', tab !== 'code');
+    el.btnCopy.classList.toggle('hidden', tab !== 'code');
+    el.btnCopy.classList.toggle('flex', tab === 'code');
+    el.btnRefresh.classList.toggle('hidden', tab !== 'preview');
+    el.viewportToggles.classList.toggle('lg:flex', tab === 'preview');
+    el.viewportToggles.classList.toggle('hidden', tab !== 'preview');
+  }
+
+  // ---------- Mobile panel switcher ----------
+  function setMobilePanel(which) {
+    const chat = which === 'chat';
+    el.panelChat.classList.toggle('hidden', !chat && window.innerWidth < 768);
+    el.panelChat.classList.toggle('flex', chat || window.innerWidth >= 768);
+    el.panelOutput.classList.toggle('hidden', chat && window.innerWidth < 768);
+    el.panelOutput.classList.toggle('flex', !chat || window.innerWidth >= 768);
+    el.mTabChat.className   = `btn glass flex-1 rounded-xl px-3 py-2 text-sm ${chat ? 'font-semibold text-white' : 'font-medium text-slate-400'}`;
+    el.mTabOutput.className = `btn glass flex-1 rounded-xl px-3 py-2 text-sm ${!chat ? 'font-semibold text-white' : 'font-medium text-slate-400'}`;
+  }
+
+  // ---------- Preview & code sync ----------
+  function renderOutput(code) {
+    state.code = code;
+    el.iframe.srcdoc = code;
+    el.codeContent.innerHTML = highlight(code);
+    el.overlay.classList.add('view-hidden');
+    el.btnDownload.disabled = false;
+    el.btnDeploy.disabled = false;
+  }
+
+  function showOverlay(title, sub) {
+    el.overlayTitle.textContent = title;
+    el.overlaySub.textContent = sub;
+    el.overlay.classList.remove('view-hidden');
+  }
+
+  // Lightweight HTML syntax highlighting (escape first, then decorate)
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function highlight(src) {
+    let out = escapeHtml(src);
+    out = out.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="tok-com">$1</span>');
+    out = out.replace(/(&lt;\/?)([a-zA-Z][\w-]*)/g, '$1<span class="tok-tag">$2</span>');
+    out = out.replace(/([\w-]+)=(&quot;|')(.*?)\2/g, '<span class="tok-attr">$1</span>=$2<span class="tok-str">$3</span>$2');
+    return out;
+  }
+
+  // ---------- Build log script ----------
+  const BUILD_STEPS = [
+    ['Analyzing prompt…', 'run', 500],
+    ['Planning layout & sections…', 'run', 650],
+    ['Generating semantic HTML structure…', 'run', 750],
+    ['Writing Tailwind CSS styles…', 'run', 800],
+    ['Adding interactions & animations…', 'run', 650],
+    ['Optimizing for mobile…', 'run', 500],
+    ['Running final checks…', 'run', 450],
+  ];
+
+  function playBuildLogs(block) {
+    return BUILD_STEPS.reduce(
+      (p, [text, kind, delay]) => p.then(() => new Promise((res) => {
+        setTimeout(() => { addLogLine(block, text, kind); res(); }, delay);
+      })),
+      Promise.resolve(),
+    );
+  }
+
+  // ---------- Backend calls (with graceful mock fallback) ----------
+  async function apiGenerateCode(prompt) {
+    const payload = { prompt, projectId: state.projectId, userId: state.userId };
+    try {
+      const res = await fetch(API.generate, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`Generation API responded ${res.status}`);
+      const data = await res.json();
+      const code = data.code || data.html || data.result;
+      if (!code) throw new Error('Generation API returned no code');
+      return { code, source: 'api' };
+    } catch (err) {
+      console.warn('[AI Web Studio] Falling back to local engine:', err.message);
+      await new Promise((r) => setTimeout(r, 600));
+      return { code: mockGenerate(prompt), source: 'mock' };
+    }
+  }
+
+  async function apiDeploy() {
+    const payload = { projectId: state.projectId, userId: state.userId, code: state.code };
+    try {
+      const res = await fetch(API.deploy, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`Deploy API responded ${res.status}`);
+      const data = await res.json();
+      if (!data.url) throw new Error('Deploy API returned no URL');
+      return { url: data.url, source: 'api' };
+    } catch (err) {
+      console.warn('[AI Web Studio] Deploy falling back to demo URL:', err.message);
+      await new Promise((r) => setTimeout(r, 2400));
+      return { url: `https://${state.projectId.replace('proj_', 'site-')}.aiwebstudio.app`, source: 'mock' };
+    }
+  }
+
+  // ---------- Generation flow ----------
+  async function startGeneration(prompt) {
+    if (state.busy) return;
+    if (!prompt.trim()) { toast('Describe what you want to build first ✍️', 'error'); el.heroPrompt.focus(); return; }
+    if (state.credits < GENERATION_COST) { toast('You are out of credits — upgrade to keep building', 'error'); return; }
+
+    state.busy = true;
+    state.projectId = state.projectId || pid();
+    state.projectName = prompt.trim().slice(0, 42) + (prompt.trim().length > 42 ? '…' : '');
+    el.projectLabel.textContent = `Project: ${state.projectId}`;
+
+    showWorkspace();
+    setMobilePanel('chat');
+    setTab('preview');
+    showOverlay('Generating your website…', 'The AI engine is writing your code');
+    setBuildStatus('Building', 'building');
+    el.btnGenerate.disabled = true;
+    el.btnRefine.disabled = true;
+
+    addUserMessage(prompt);
+    const logBlock = createLogBlock();
+    addLogLine(logBlock, `Project ${state.projectId} initialized`, 'ok');
+
+    const logsDone = playBuildLogs(logBlock);
+    const gen = apiGenerateCode(prompt);
+
+    try {
+      const [{ code }] = await Promise.all([gen, logsDone]);
+      addLogLine(logBlock, 'Complete! ✓ Build succeeded', 'ok');
+      renderOutput(code);
+      setBuildStatus('Ready', 'ok');
+      addAssistantMessage('Your website is ready! Check the live preview on the right — and tell me what you\'d like to change or add.');
+      state.credits = Math.max(0, state.credits - GENERATION_COST);
+      renderCredits();
+      if (window.innerWidth < 768) setMobilePanel('output');
+      toast('Website generated ✨', 'success');
+    } catch (err) {
+      addLogLine(logBlock, `Build failed: ${err.message}`, 'err');
+      setBuildStatus('Error', 'err');
+      showOverlay('Generation failed', 'Please try again in a moment');
+      addAssistantMessage('Something went wrong during generation. Please try again.');
+      toast('Generation failed — please retry', 'error');
+    } finally {
+      state.busy = false;
+      el.btnGenerate.disabled = false;
+      el.btnRefine.disabled = false;
+    }
+  }
+
+  // ---------- Refinement flow ----------
+  async function startRefinement(prompt) {
+    if (state.busy || !prompt.trim()) return;
+    if (!state.code) { toast('Generate a website first', 'error'); return; }
+
+    state.busy = true;
+    el.btnRefine.disabled = true;
+    addUserMessage(prompt);
+    addTypingIndicator();
+    setBuildStatus('Refining', 'building');
+    showOverlay('Applying your changes…', 'Updating the generated code');
+
+    try {
+      const fullPrompt = `Refine the existing website. Previous code is attached in context. Edit request: ${prompt}`;
+      const { code } = await apiGenerateCode(fullPrompt);
+      removeTypingIndicator();
+      const block = createLogBlock();
+      addLogLine(block, 'Applying edits to index.html…', 'run');
+      await new Promise((r) => setTimeout(r, 500));
+      addLogLine(block, 'Rebuilding styles…', 'run');
+      await new Promise((r) => setTimeout(r, 450));
+      addLogLine(block, 'Complete! ✓ Changes applied', 'ok');
+      renderOutput(code);
+      setBuildStatus('Ready', 'ok');
+      addAssistantMessage('Done — I\'ve updated the site with your changes. Anything else?');
+    } catch (err) {
+      removeTypingIndicator();
+      setBuildStatus('Error', 'err');
+      el.overlay.classList.add('view-hidden');
+      addAssistantMessage('I couldn\'t apply that change. Mind trying again?');
+      toast('Refinement failed', 'error');
+    } finally {
+      state.busy = false;
+      el.btnRefine.disabled = false;
+    }
+  }
+
+  // ---------- Deploy flow ----------
+  const DEPLOY_STEPS = ['Packaging build output…', 'Uploading assets…', 'Provisioning edge network…', 'Assigning domain…', 'Finalizing deployment…'];
+  let deployStepTimer = null;
+
+  function openModal() {
+    el.modal.classList.remove('view-hidden');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeModal() {
+    el.modal.classList.add('view-hidden');
+    document.body.style.overflow = '';
+    clearInterval(deployStepTimer);
+  }
+  function setModalState(which) {
+    el.stLoading.classList.toggle('view-hidden', which !== 'loading');
+    el.stSuccess.classList.toggle('view-hidden', which !== 'success');
+    el.stError.classList.toggle('view-hidden', which !== 'error');
+  }
+
+  async function startDeploy() {
+    if (!state.code) { toast('Generate a website before deploying', 'error'); return; }
+    openModal();
+    setModalState('loading');
+
+    let i = 0;
+    el.deployStep.textContent = DEPLOY_STEPS[0];
+    clearInterval(deployStepTimer);
+    deployStepTimer = setInterval(() => {
+      i = Math.min(i + 1, DEPLOY_STEPS.length - 1);
+      el.deployStep.textContent = DEPLOY_STEPS[i];
+    }, 900);
+
+    try {
+      const { url } = await apiDeploy();
+      clearInterval(deployStepTimer);
+      state.deployedUrl = url;
+      el.deployUrl.textContent = url;
+      el.deployUrl.href = url;
+      setModalState('success');
+      addAssistantMessage(`🚀 Deployed! Your site is live at ${url}`);
+      toast('Deployment successful 🚀', 'success');
+    } catch (err) {
+      clearInterval(deployStepTimer);
+      el.deployErrMsg.textContent = err.message || 'Something went wrong while publishing your site.';
+      setModalState('error');
+      toast('Deployment failed', 'error');
+    }
+  }
+
+  // ---------- Download ----------
+  function downloadCode() {
+    if (!state.code) { toast('Nothing to download yet', 'error'); return; }
+    const blob = new Blob([state.code], { type: 'text/html' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${state.projectId || 'ai-web-studio-project'}.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+    toast('index.html downloaded 📦', 'success');
+  }
+
+  // ---------- Copy code ----------
+  async function copyCode() {
+    if (!state.code) return;
+    try {
+      await navigator.clipboard.writeText(state.code);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = state.code;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    el.copyLabel.textContent = 'Copied!';
+    setTimeout(() => { el.copyLabel.textContent = 'Copy Code'; }, 1600);
+    toast('Code copied to clipboard', 'success');
+  }
+
+  // ---------- New project ----------
+  function newProject() {
+    if (state.busy) return;
+    state.projectId = null;
+    state.projectName = null;
+    state.code = '';
+    state.deployedUrl = null;
+    el.chatStream.innerHTML = '';
+    el.codeContent.innerHTML = '&lt;!-- Your generated code will appear here --&gt;';
+    el.iframe.srcdoc = '';
+    el.heroPrompt.value = '';
+    el.btnDownload.disabled = true;
+    el.btnDeploy.disabled = true;
+    setBuildStatus('Idle', 'idle');
+    showHero();
+    el.heroPrompt.focus();
+  }
+
+  /* ============================================================
+   *  LOCAL MOCK ENGINE
+   *  Generates a complete themed site so the whole UI works
+   *  even before the Express backend is connected.
+   * ============================================================ */
+  function mockGenerate(prompt) {
+    const p = prompt.toLowerCase();
+    if (p.includes('crypto') || p.includes('dashboard') || p.includes('analytics')) return mockDashboard();
+    if (p.includes('portfolio') || p.includes('designer') || p.includes('photograph')) return mockPortfolio();
+    if (p.includes('shop') || p.includes('commerce') || p.includes('store') || p.includes('sneaker')) return mockStore();
+    if (p.includes('restaurant') || p.includes('ramen') || p.includes('cafe') || p.includes('food')) return mockRestaurant();
+    if (p.includes('blog') || p.includes('magazine') || p.includes('editorial')) return mockBlog();
+    return mockSaas();
+  }
+
+  const baseCss = `
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;line-height:1.6}
+    .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+    .btn{display:inline-block;padding:12px 28px;border-radius:10px;font-weight:600;text-decoration:none;cursor:pointer;border:none;font-size:15px;transition:transform .15s ease,opacity .2s}
+    .btn:hover{transform:translateY(-2px);opacity:.92}
+    .grid{display:grid;gap:24px}
+    @media(min-width:720px){.grid-3{grid-template-columns:repeat(3,1fr)}.grid-2{grid-template-columns:repeat(2,1fr)}}
+    section{padding:72px 0}
+    h2{font-size:clamp(26px,4vw,36px);margin-bottom:14px}
+  `;
+
+  function mockSaas() {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FlowDesk — Work, in flow</title>
+<style>${baseCss}
+  body{background:#0b0d17;color:#e6e8f2}
+  nav{display:flex;justify-content:space-between;align-items:center;padding:20px 0}
+  .logo{font-weight:800;font-size:20px;background:linear-gradient(90deg,#818cf8,#22d3ee);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero{text-align:center;padding:96px 0 72px}
+  .hero h1{font-size:clamp(36px,6vw,60px);line-height:1.1;letter-spacing:-1px}
+  .hero h1 span{background:linear-gradient(90deg,#818cf8,#22d3ee);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero p{max-width:560px;margin:20px auto 32px;color:#9aa0b5;font-size:18px}
+  .btn-p{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff}
+  .btn-g{background:rgba(255,255,255,.08);color:#e6e8f2;border:1px solid rgba(255,255,255,.14)}
+  .card{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:28px}
+  .card h3{margin-bottom:8px;font-size:18px}
+  .card p{color:#9aa0b5;font-size:14.5px}
+  .ic{width:42px;height:42px;border-radius:10px;display:grid;place-items:center;font-size:20px;margin-bottom:16px;background:rgba(99,102,241,.18)}
+  .price{text-align:center}
+  .price .amt{font-size:42px;font-weight:800;margin:12px 0}
+  .price ul{list-style:none;margin:18px 0 24px;color:#9aa0b5;font-size:14.5px}
+  .price li{padding:6px 0}
+  .pop{border-color:#6366f1;box-shadow:0 0 40px rgba(99,102,241,.25)}
+  .quote{font-style:italic;color:#c3c8da}
+  .who{margin-top:14px;font-size:13.5px;color:#9aa0b5}
+  footer{border-top:1px solid rgba(255,255,255,.08);padding:32px 0;color:#787f95;font-size:14px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <div class="logo">◆ FlowDesk</div>
+    <a class="btn btn-g" href="#pricing">Get Started</a>
+  </nav>
+  <header class="hero">
+    <h1>Your team's work,<br><span>finally in flow</span></h1>
+    <p>FlowDesk unifies tasks, docs and chat into one calm workspace — so your team ships faster with fewer meetings.</p>
+    <a class="btn btn-p" href="#pricing">Start Free Trial</a>
+    <a class="btn btn-g" href="#features" style="margin-left:10px">See Features</a>
+  </header>
+  <section id="features">
+    <h2 style="text-align:center">Everything in one place</h2>
+    <div class="grid grid-3" style="margin-top:36px">
+      <div class="card"><div class="ic">⚡</div><h3>Instant Tasks</h3><p>Create, assign and track work in seconds with keyboard-first workflows.</p></div>
+      <div class="card"><div class="ic">📄</div><h3>Living Docs</h3><p>Docs that stay in sync with your projects — no more stale wikis.</p></div>
+      <div class="card"><div class="ic">💬</div><h3>Focused Chat</h3><p>Conversations attached to work items, so context never gets lost.</p></div>
+    </div>
+  </section>
+  <section id="pricing">
+    <h2 style="text-align:center">Simple pricing</h2>
+    <div class="grid grid-3" style="margin-top:36px">
+      <div class="card price"><h3>Starter</h3><div class="amt">$0</div><ul><li>Up to 5 members</li><li>3 projects</li><li>Community support</li></ul><a class="btn btn-g" href="#">Choose Starter</a></div>
+      <div class="card price pop"><h3>Pro</h3><div class="amt">$12</div><ul><li>Unlimited members</li><li>Unlimited projects</li><li>Priority support</li></ul><a class="btn btn-p" href="#">Choose Pro</a></div>
+      <div class="card price"><h3>Enterprise</h3><div class="amt">Custom</div><ul><li>SSO &amp; audit logs</li><li>Dedicated manager</li><li>99.9% SLA</li></ul><a class="btn btn-g" href="#">Contact Sales</a></div>
+    </div>
+  </section>
+  <section>
+    <h2 style="text-align:center">Loved by fast teams</h2>
+    <div class="grid grid-2" style="margin-top:36px">
+      <div class="card"><p class="quote">“We cancelled three tools the week we switched. FlowDesk just gets out of the way.”</p><div class="who">— Maya R., Head of Product</div></div>
+      <div class="card"><p class="quote">“Our sprint velocity went up 30%. The chat-on-tasks feature alone is worth it.”</p><div class="who">— Daniel K., Engineering Lead</div></div>
+    </div>
+  </section>
+  <footer>© 2026 FlowDesk Inc. · Privacy · Terms</footer>
+</div>
+</body>
+</html>`;
+  }
+
+  function mockPortfolio() {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alex Riva — Product Designer</title>
+<style>${baseCss}
+  body{background:#faf9f7;color:#191817}
+  nav{display:flex;justify-content:space-between;align-items:center;padding:22px 0;font-weight:600}
+  .hero{padding:110px 0 80px}
+  .hero h1{font-size:clamp(38px,6vw,64px);letter-spacing:-1.5px;line-height:1.08}
+  .hero em{font-style:normal;color:#c2410c}
+  .hero p{max-width:520px;margin-top:20px;color:#5c5852;font-size:18px}
+  .work{background:#fff;border:1px solid #e8e4de;border-radius:16px;overflow:hidden;transition:transform .2s,box-shadow .2s}
+  .work:hover{transform:translateY(-4px);box-shadow:0 18px 40px -18px rgba(0,0,0,.18)}
+  .thumb{height:180px;display:grid;place-items:center;font-size:40px}
+  .work div.pad{padding:20px}
+  .tag{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#c2410c}
+  .skill{margin-bottom:18px}
+  .bar{height:8px;border-radius:99px;background:#eee7de;overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#c2410c,#f59e0b)}
+  form{display:grid;gap:14px;max-width:480px}
+  input,textarea{padding:14px;border:1px solid #ddd6cc;border-radius:10px;font:inherit;background:#fff}
+  .btn-d{background:#191817;color:#fff}
+  footer{padding:36px 0;color:#8a857d;font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav><div>Alex Riva</div><div>alex@riva.design</div></nav>
+  <header class="hero">
+    <h1>Designing products people <em>actually love</em> to use.</h1>
+    <p>I'm Alex — a product designer with 8 years of experience turning complex problems into simple, beautiful interfaces.</p>
+  </header>
+  <section>
+    <h2>Selected Work</h2>
+    <div class="grid grid-3" style="margin-top:30px">
+      <div class="work"><div class="thumb" style="background:#ffe9d6">🏦</div><div class="pad"><div class="tag">Fintech</div><h3>Nova Banking</h3></div></div>
+      <div class="work"><div class="thumb" style="background:#e3f0ff">🩺</div><div class="pad"><div class="tag">Health</div><h3>CarePulse App</h3></div></div>
+      <div class="work"><div class="thumb" style="background:#eaffe3">🌱</div><div class="pad"><div class="tag">Climate</div><h3>Verdant Platform</h3></div></div>
+    </div>
+  </section>
+  <section>
+    <h2>Skills</h2>
+    <div style="max-width:520px;margin-top:26px">
+      <div class="skill"><div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Product Design</span><span>95%</span></div><div class="bar"><i style="width:95%"></i></div></div>
+      <div class="skill"><div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Design Systems</span><span>90%</span></div><div class="bar"><i style="width:90%"></i></div></div>
+      <div class="skill"><div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Prototyping</span><span>85%</span></div><div class="bar"><i style="width:85%"></i></div></div>
+    </div>
+  </section>
+  <section>
+    <h2>Let's talk</h2>
+    <form onsubmit="event.preventDefault();alert('Thanks! I\\'ll get back to you soon.')">
+      <input placeholder="Your name" required>
+      <input type="email" placeholder="Email address" required>
+      <textarea rows="4" placeholder="Tell me about your project"></textarea>
+      <button class="btn btn-d">Send Message</button>
+    </form>
+  </section>
+  <footer>© 2026 Alex Riva · Dribbbling pixels since 2018</footer>
+</div>
+</body>
+</html>`;
+  }
+
+  function mockDashboard() {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CoinScope — Crypto Dashboard</title>
+<style>${baseCss}
+  body{background:#0a0e14;color:#dbe2ef;display:flex;min-height:100vh}
+  aside{width:220px;background:#0d131c;border-right:1px solid #1c2634;padding:24px 16px;flex-shrink:0}
+  aside .logo{font-weight:800;font-size:18px;color:#22d3ee;margin-bottom:28px}
+  aside a{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:10px;color:#8b96a9;text-decoration:none;font-size:14.5px;margin-bottom:4px}
+  aside a.on,aside a:hover{background:#16202e;color:#fff}
+  main{flex:1;padding:28px;min-width:0}
+  .stats{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:28px}
+  .stat{background:#0f1622;border:1px solid #1c2634;border-radius:14px;padding:20px}
+  .stat .lbl{font-size:12.5px;color:#8b96a9;text-transform:uppercase;letter-spacing:.06em}
+  .stat .val{font-size:26px;font-weight:800;margin-top:6px}
+  .up{color:#34d399}.dn{color:#f87171}
+  table{width:100%;border-collapse:collapse;background:#0f1622;border:1px solid #1c2634;border-radius:14px;overflow:hidden}
+  th,td{padding:14px 16px;text-align:left;font-size:14px}
+  th{background:#111a28;color:#8b96a9;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+  tr+tr td{border-top:1px solid #18222f}
+  .spark{font-family:monospace;letter-spacing:-1px}
+  h1{font-size:22px;margin-bottom:22px}
+  @media(max-width:760px){aside{display:none}}
+</style>
+</head>
+<body>
+<aside>
+  <div class="logo">◈ CoinScope</div>
+  <a class="on" href="#">📊 Overview</a>
+  <a href="#">💼 Portfolio</a>
+  <a href="#">⭐ Watchlist</a>
+  <a href="#">🔔 Alerts</a>
+  <a href="#">⚙️ Settings</a>
+</aside>
+<main>
+  <h1>Market Overview</h1>
+  <div class="stats">
+    <div class="stat"><div class="lbl">Portfolio Value</div><div class="val">$128,430</div><div class="up">▲ 4.2% today</div></div>
+    <div class="stat"><div class="lbl">24h Change</div><div class="val up">+$5,204</div><div class="up">▲ market rally</div></div>
+    <div class="stat"><div class="lbl">Total Assets</div><div class="val">14</div><div style="color:#8b96a9">across 3 chains</div></div>
+    <div class="stat"><div class="lbl">Best Performer</div><div class="val">SOL</div><div class="up">▲ 11.8%</div></div>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>Asset</th><th>Price</th><th>24h</th><th>Trend</th><th>Market Cap</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>🟠 Bitcoin · BTC</td><td>$97,240</td><td class="up">+2.4%</td><td class="spark up">▂▃▄▅▆▇█</td><td>$1.92T</td></tr>
+      <tr><td>2</td><td>🔷 Ethereum · ETH</td><td>$5,410</td><td class="up">+3.1%</td><td class="spark up">▃▄▃▅▆▆█</td><td>$650B</td></tr>
+      <tr><td>3</td><td>🟣 Solana · SOL</td><td>$312</td><td class="up">+11.8%</td><td class="spark up">▂▂▄▆▇██</td><td>$148B</td></tr>
+      <tr><td>4</td><td>🔵 Cardano · ADA</td><td>$1.24</td><td class="dn">−1.6%</td><td class="spark dn">█▇▆▆▅▄▃</td><td>$44B</td></tr>
+      <tr><td>5</td><td>⚪ Polkadot · DOT</td><td>$18.40</td><td class="up">+0.9%</td><td class="spark up">▄▄▅▄▅▆▆</td><td>$26B</td></tr>
+    </tbody>
+  </table>
+</main>
+</body>
+</html>`;
+  }
+
+  function mockStore() {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KICKLAB — Sneakers, Reimagined</title>
+<style>${baseCss}
+  body{background:#f5f5f4;color:#141414}
+  nav{position:sticky;top:0;background:#fff;border-bottom:1px solid #e7e5e4;z-index:10}
+  nav .in{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;max-width:1080px;margin:0 auto}
+  .logo{font-weight:900;letter-spacing:-.5px;font-size:20px}
+  .cart{position:relative;font-size:22px;cursor:pointer}
+  .cart b{position:absolute;top:-6px;right:-10px;background:#dc2626;color:#fff;font-size:11px;border-radius:99px;padding:1px 6px}
+  .promo{background:#141414;color:#fff;text-align:center;padding:9px;font-size:13px;letter-spacing:.04em}
+  .hero{background:linear-gradient(120deg,#141414,#3f3f46);color:#fff;border-radius:20px;margin-top:24px;padding:64px 40px;display:flex;flex-wrap:wrap;gap:24px;align-items:center;justify-content:space-between}
+  .hero h1{font-size:clamp(30px,5vw,48px);letter-spacing:-1px}
+  .hero p{color:#c9c9cf;margin:12px 0 24px;max-width:400px}
+  .shoe{font-size:110px;transform:rotate(-15deg)}
+  .btn-r{background:#fff;color:#141414}
+  .prod{background:#fff;border-radius:16px;padding:22px;text-align:center;transition:transform .2s,box-shadow .2s}
+  .prod:hover{transform:translateY(-4px);box-shadow:0 16px 36px -16px rgba(0,0,0,.2)}
+  .prod .img{font-size:64px;margin:10px 0}
+  .prod h3{font-size:16px}
+  .prod .pr{font-weight:800;margin:8px 0 14px}
+  .btn-b{background:#141414;color:#fff;padding:10px 22px;font-size:14px}
+</style>
+</head>
+<body>
+<div class="promo">FREE SHIPPING ON ORDERS OVER $100 · NEW DROP EVERY FRIDAY</div>
+<nav><div class="in"><div class="logo">KICKLAB</div><div class="cart" onclick="alert('Cart: 2 items')">🛒<b>2</b></div></div></nav>
+<div class="wrap">
+  <header class="hero">
+    <div><h1>The Velocity X1<br>has landed.</h1><p>Ultra-light. Carbon-plated. Built for the streets and the track alike.</p><a class="btn btn-r" href="#shop">Shop the Drop</a></div>
+    <div class="shoe">👟</div>
+  </header>
+  <section id="shop">
+    <h2>Featured Kicks</h2>
+    <div class="grid grid-3" style="margin-top:26px">
+      <div class="prod"><div class="img">👟</div><h3>Velocity X1</h3><div class="pr">$189</div><button class="btn btn-b" onclick="alert('Added Velocity X1 to cart!')">Add to Cart</button></div>
+      <div class="prod"><div class="img">🥾</div><h3>Terra Boost</h3><div class="pr">$149</div><button class="btn btn-b" onclick="alert('Added Terra Boost to cart!')">Add to Cart</button></div>
+      <div class="prod"><div class="img">👞</div><h3>Metro Classic</h3><div class="pr">$119</div><button class="btn btn-b" onclick="alert('Added Metro Classic to cart!')">Add to Cart</button></div>
+    </div>
+  </section>
+</div>
+</body>
+</html>`;
+  }
+
+  function mockRestaurant() {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kumo Ramen — Slurp Happiness</title>
+<style>${baseCss}
+  body{background:#fffbf3;color:#2b2018}
+  .hero{background:linear-gradient(160deg,#7c2d12,#b45309);color:#fff;text-align:center;padding:110px 24px;border-radius:0 0 32px 32px}
+  .hero h1{font-size:clamp(36px,6vw,58px)}
+  .hero p{margin:14px 0 30px;opacity:.9;font-size:18px}
+  .btn-o{background:#fff;color:#7c2d12}
+  .menu-item{display:flex;justify-content:space-between;gap:14px;padding:16px 0;border-bottom:1px dashed #e5d5bd}
+  .menu-item h4{font-size:17px}
+  .menu-item p{color:#8a7460;font-size:14px}
+  .price{font-weight:800;color:#b45309;white-space:nowrap}
+  .cat{margin-top:36px;font-size:14px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#b45309}
+  .strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px}
+  .strip div{background:#f7ecd9;border-radius:14px;height:110px;display:grid;place-items:center;font-size:42px}
+  .hours{background:#2b2018;color:#f3e8d8;border-radius:20px;padding:36px;display:grid;gap:8px}
+</style>
+</head>
+<body>
+<header class="hero">
+  <h1>🍜 Kumo Ramen</h1>
+  <p>Hand-pulled noodles. 18-hour broth. Pure comfort in a bowl.</p>
+  <a class="btn btn-o" href="#book" onclick="alert('Reservation request sent! We\\'ll confirm by text.')">Reserve a Table</a>
+</header>
+<div class="wrap">
+  <section>
+    <h2>Menu</h2>
+    <div class="cat">Ramen</div>
+    <div class="menu-item"><div><h4>Tonkotsu Classic</h4><p>Rich pork broth, chashu, ajitama egg, nori</p></div><div class="price">$16</div></div>
+    <div class="menu-item"><div><h4>Spicy Miso Blaze</h4><p>Miso broth, chili oil, ground pork, corn butter</p></div><div class="price">$17</div></div>
+    <div class="menu-item"><div><h4>Yuzu Shio (veggie)</h4><p>Light citrus broth, tofu, seasonal greens</p></div><div class="price">$15</div></div>
+    <div class="cat">Sides</div>
+    <div class="menu-item"><div><h4>Gyoza (6pc)</h4><p>Pan-fried pork &amp; chive dumplings</p></div><div class="price">$8</div></div>
+    <div class="menu-item"><div><h4>Karaage Chicken</h4><p>Crispy marinated thigh, kewpie mayo</p></div><div class="price">$9</div></div>
+  </section>
+  <section>
+    <h2>A peek inside</h2>
+    <div class="strip" style="margin-top:22px"><div>🍜</div><div>🥟</div><div>🍶</div><div>🏮</div><div>🍥</div></div>
+  </section>
+  <section id="book">
+    <div class="hours">
+      <h2 style="color:#fff">Hours &amp; Location</h2>
+      <div>Mon–Thu · 11:30 — 21:30</div>
+      <div>Fri–Sat · 11:30 — 23:00</div>
+      <div>Sun · 12:00 — 20:00</div>
+      <div style="margin-top:10px">📍 88 Noodle Lane, Downtown · ☎️ (555) 012-8890</div>
+    </div>
+  </section>
+</div>
+</body>
+</html>`;
+  }
+
+  function mockBlog() {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Signal — Ideas Worth Reading</title>
+<style>${baseCss}
+  body{background:#fff;color:#111}
+  .mast{text-align:center;padding:34px 0;border-bottom:3px double #111}
+  .mast h1{font-size:34px;letter-spacing:.02em;font-family:Georgia,serif}
+  .mast p{font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:#777}
+  .feat{display:grid;gap:28px;padding:44px 0;border-bottom:1px solid #e5e5e5}
+  @media(min-width:760px){.feat{grid-template-columns:1.4fr 1fr;align-items:center}}
+  .feat .img{background:linear-gradient(135deg,#0f172a,#334155);border-radius:14px;height:280px;display:grid;place-items:center;font-size:64px}
+  .kick{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#b91c1c}
+  .feat h2{font-family:Georgia,serif;font-size:clamp(26px,3.6vw,38px);line-height:1.15;margin:10px 0}
+  .meta{font-size:13px;color:#888}
+  article{padding:22px 0;border-bottom:1px solid #eee}
+  article h3{font-family:Georgia,serif;font-size:20px;margin:8px 0 6px}
+  article p{color:#555;font-size:14.5px}
+  .sub{background:#111;color:#fff;border-radius:16px;padding:36px;text-align:center;margin:44px 0}
+  .sub input{padding:12px 16px;border-radius:9px;border:none;width:min(280px,100%);font:inherit;margin-right:8px}
+  .btn-w{background:#fff;color:#111;padding:12px 22px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast"><h1>The Signal</h1><p>Ideas worth reading · Est. 2026</p></header>
+  <section class="feat">
+    <div class="img">🛰️</div>
+    <div>
+      <div class="kick">Technology</div>
+      <h2>The quiet rise of the one-person software company</h2>
+      <p class="meta">By Rhea Almeida · 8 min read</p>
+      <p style="margin-top:12px;color:#444">Solo founders armed with automation are building products that once required whole teams — and reshaping what a "company" even means.</p>
+    </div>
+  </section>
+  <section class="grid grid-3" style="padding:36px 0">
+    <article><div class="kick">Design</div><h3>Why every interface is becoming a conversation</h3><p class="meta">6 min read</p></article>
+    <article><div class="kick">Culture</div><h3>The four-day week, two years in: what actually changed</h3><p class="meta">9 min read</p></article>
+    <article><div class="kick">Science</div><h3>Fusion's decade: separating milestones from hype</h3><p class="meta">7 min read</p></article>
+  </section>
+  <div class="sub">
+    <h2 style="font-family:Georgia,serif">Get The Signal weekly</h2>
+    <p style="opacity:.75;margin:8px 0 20px">One thoughtful email. Every Sunday. No noise.</p>
+    <form style="display:inline" onsubmit="event.preventDefault();alert('Subscribed! See you Sunday.')"><input type="email" placeholder="you@example.com" required><button class="btn btn-w">Subscribe</button></form>
+  </div>
+</div>
+</body>
+</html>`;
+  }
+
+  /* ============================================================
+   *  EVENT WIRING
+   * ============================================================ */
+  // Hero
+  el.btnGenerate.addEventListener('click', () => startGeneration(el.heroPrompt.value));
+  el.heroPrompt.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); startGeneration(el.heroPrompt.value); }
+  });
+
+  // Refine
+  el.btnRefine.addEventListener('click', () => {
+    const v = el.refinePrompt.value;
+    el.refinePrompt.value = '';
+    autoGrow(el.refinePrompt);
+    startRefinement(v);
+  });
+  el.refinePrompt.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); el.btnRefine.click(); }
+  });
+
+  // Auto-grow textarea
+  function autoGrow(ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 128) + 'px'; }
+  el.refinePrompt.addEventListener('input', () => autoGrow(el.refinePrompt));
+
+  // Tabs
+  el.tabPreview.addEventListener('click', () => setTab('preview'));
+  el.tabCode.addEventListener('click', () => setTab('code'));
+
+  // Viewport toggles
+  document.querySelectorAll('.vw-btn').forEach((b) => {
+    b.addEventListener('click', () => {
+      el.frameWrap.style.width = b.dataset.vw;
+      document.querySelectorAll('.vw-btn').forEach((x) => x.classList.remove('text-white', 'bg-white/10'));
+      b.classList.add('text-white', 'bg-white/10');
+    });
+  });
+
+  // Header actions
+  el.btnCopy.addEventListener('click', copyCode);
+  el.btnDownload.addEventListener('click', downloadCode);
+  el.btnDeploy.addEventListener('click', startDeploy);
+  el.btnNewProject.addEventListener('click', newProject);
+  el.btnHome.addEventListener('click', () => { if (!state.busy) showHero(); });
+  el.btnRefresh.addEventListener('click', () => { if (state.code) el.iframe.srcdoc = state.code; });
+
+  // Modal
+  el.btnCloseModal.addEventListener('click', closeModal);
+  el.btnDoneModal.addEventListener('click', closeModal);
+  el.modalBackdrop.addEventListener('click', closeModal);
+  el.btnRetry.addEventListener('click', startDeploy);
+  el.btnVisit.addEventListener('click', () => { if (state.deployedUrl) window.open(state.deployedUrl, '_blank', 'noopener'); });
+  el.btnCopyUrl.addEventListener('click', async () => {
+    if (!state.deployedUrl) return;
+    try { await navigator.clipboard.writeText(state.deployedUrl); } catch {}
+    el.btnCopyUrl.textContent = 'Copied!';
+    setTimeout(() => { el.btnCopyUrl.textContent = 'Copy'; }, 1500);
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+  // Mobile panels
+  el.mTabChat.addEventListener('click', () => setMobilePanel('chat'));
+  el.mTabOutput.addEventListener('click', () => setMobilePanel('output'));
+  window.addEventListener('resize', () => {
+    if (window.innerWidth >= 768) {
+      el.panelChat.classList.remove('hidden');
+      el.panelOutput.classList.remove('hidden');
+      el.panelChat.classList.add('flex');
+      el.panelOutput.classList.add('flex');
+    }
+  });
+
+  // ---------- Init ----------
+  renderChips();
+  renderCredits();
+  setTab('preview');
+  el.overlay.classList.add('view-hidden');
+  el.heroPrompt.focus();
+  </script>
+</body>
+</html>
