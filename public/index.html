@@ -138,10 +138,10 @@
       <!-- Free credits badge (refills every 15 days) -->
       <button id="plan-badge" class="btn glass flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-semibold hover:border-white/20 sm:gap-2 sm:px-3.5 sm:text-xs" title="Free credits — refill every 15 days"></button>
 
-      <!-- New Project -->
-      <button id="btn-new-project" class="btn glass flex items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="New Project">
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-        <span class="hidden md:inline">New Project</span>
+      <!-- Projects (history + new project) -->
+      <button id="btn-projects" class="btn glass flex items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="Your projects">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 8 4.5v9L12 20l-8-4.5v-9L12 2z"/><path d="m12 2 8 4.5-8 4.5-8-4.5L12 2z"/><path d="M12 11v9"/></svg>
+        <span class="hidden md:inline">Projects</span>
       </button>
 
       <!-- Download Code -->
@@ -150,11 +150,12 @@
         <span class="hidden md:inline">Download Code</span>
       </button>
 
-      <!-- Deploy Live -->
+      <!-- Deploy / Update Live -->
       <button id="btn-deploy" class="btn btn-primary flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-white" disabled>
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
-        <span class="hidden sm:inline">Deploy Live</span>
-        <span class="sm:hidden">Deploy</span>
+        <svg id="deploy-icon-rocket" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+        <svg id="deploy-icon-update" class="hidden h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        <span id="deploy-label-full" class="hidden sm:inline">Deploy Live</span>
+        <span id="deploy-label-short" class="sm:hidden">Deploy</span>
       </button>
     </div>
   </header>
@@ -384,6 +385,30 @@
   </main>
 
   <!-- ============================================================ -->
+  <!-- PROJECTS MODAL (history)                                     -->
+  <!-- ============================================================ -->
+  <div id="projects-modal" class="view-hidden fixed inset-0 z-50 grid place-items-center p-4">
+    <div id="projects-backdrop" class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+    <div class="glass-strong animate-pop nice-scroll relative max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl p-5 sm:p-6">
+      <button id="btn-close-projects" class="btn absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" title="Close">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+
+      <div class="mb-4">
+        <h3 class="text-lg font-bold text-white">Your Projects</h3>
+        <p class="mt-1 text-sm text-slate-400">Reopen anything you've built — code, preview and live link are saved.</p>
+      </div>
+
+      <button id="btn-new-from-projects" class="btn btn-primary mb-4 flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        New Project
+      </button>
+
+      <div id="projects-list" class="space-y-2"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
   <!-- DEPLOY MODAL                                                 -->
   <!-- ============================================================ -->
   <div id="deploy-modal" class="view-hidden fixed inset-0 z-50 grid place-items-center p-4">
@@ -482,6 +507,7 @@
     busy: false,
     deployedUrl: null,
     activeTab: 'preview',
+    projects: JSON.parse(localStorage.getItem('aws_projects') || '[]'),
   };
 
   // ---------- DOM shortcuts ----------
@@ -511,11 +537,20 @@
     copyLabel:     $('#copy-label'),
     btnDownload:   $('#btn-download'),
     btnDeploy:     $('#btn-deploy'),
-    btnNewProject: $('#btn-new-project'),
+    btnProjects:   $('#btn-projects'),
     btnHome:       $('#btn-home'),
     btnRefresh:    $('#btn-refresh-preview'),
     planBadge:     $('#plan-badge'),
     viewportToggles: $('#viewport-toggles'),
+    // deploy button parts (label + icon swap for Deploy vs Update)
+    deployLabelFull:  $('#deploy-label-full'),
+    deployLabelShort: $('#deploy-label-short'),
+    deployIconRocket: $('#deploy-icon-rocket'),
+    deployIconUpdate: $('#deploy-icon-update'),
+    // projects modal
+    projectsModal:    $('#projects-modal'),
+    projectsBackdrop: $('#projects-backdrop'),
+    projectsList:     $('#projects-list'),
     // modal
     modal:         $('#deploy-modal'),
     modalBackdrop: $('#deploy-backdrop'),
@@ -748,6 +783,7 @@
     el.overlay.classList.add('view-hidden');
     el.btnDownload.disabled = false;
     el.btnDeploy.disabled = false;
+    updateDeployButton();
   }
 
   function showOverlay(title, sub) {
@@ -866,6 +902,7 @@
       state.credits = Math.max(0, state.credits - GENERATION_COST);
       saveCredits();
       renderCredits();
+      saveProject();
       if (window.innerWidth < 768) setMobilePanel('output');
       toast('Website generated ✨', 'success');
     } catch (err) {
@@ -894,7 +931,9 @@
     showOverlay('Applying your changes…', 'Updating the generated code');
 
     try {
-      const fullPrompt = `Refine the existing website. Previous code is attached in context. Edit request: ${prompt}`;
+      const fullPrompt =
+        `Here is the current website's full HTML:\n\n${state.code}\n\n` +
+        `Apply this change and return the COMPLETE updated HTML document (keep everything else intact): ${prompt}`;
       const { code } = await apiGenerateCode(fullPrompt);
       removeTypingIndicator();
       const block = createLogBlock();
@@ -905,7 +944,12 @@
       addLogLine(block, 'Complete! ✓ Changes applied', 'ok');
       renderOutput(code);
       setBuildStatus('Ready', 'ok');
-      addAssistantMessage('Done — I\'ve updated the site with your changes. Anything else?');
+      saveProject();
+      addAssistantMessage(
+        state.deployedUrl
+          ? 'Done — I\'ve updated the site. Hit “Update Live” to push these changes to your live URL.'
+          : 'Done — I\'ve updated the site with your changes. Anything else?'
+      );
     } catch (err) {
       removeTypingIndicator();
       setBuildStatus('Error', 'err');
@@ -950,6 +994,7 @@
       el.deployStep.textContent = DEPLOY_STEPS[i];
     }, 900);
 
+    const wasLive = !!state.deployedUrl;
     try {
       const { url } = await apiDeploy();
       clearInterval(deployStepTimer);
@@ -957,8 +1002,10 @@
       el.deployUrl.textContent = url;
       el.deployUrl.href = url;
       setModalState('success');
-      addAssistantMessage(`🚀 Deployed! Your site is live at ${url}`);
-      toast('Deployment successful 🚀', 'success');
+      updateDeployButton();
+      saveProject();
+      addAssistantMessage(`🚀 ${wasLive ? 'Updated' : 'Deployed'}! Your site is live at ${url}`);
+      toast(`${wasLive ? 'Update' : 'Deployment'} successful 🚀`, 'success');
     } catch (err) {
       clearInterval(deployStepTimer);
       el.deployErrMsg.textContent = err.message || 'Something went wrong while publishing your site.';
@@ -1012,9 +1059,132 @@
     el.heroPrompt.value = '';
     el.btnDownload.disabled = true;
     el.btnDeploy.disabled = true;
+    updateDeployButton();
     setBuildStatus('Idle', 'idle');
     showHero();
     el.heroPrompt.focus();
+  }
+
+  /* ============================================================
+   *  PROJECT HISTORY
+   *  Every generation / edit / deploy is saved locally so the
+   *  user can reopen any past project — its code, preview and
+   *  live URL all come back exactly as they left it.
+   * ============================================================ */
+
+  // The Deploy button becomes an "Update Live" button once a project
+  // has been deployed — redeploying pushes the latest code to the SAME
+  // live URL, so edits go live again and again (just like Replit).
+  function updateDeployButton() {
+    const deployed = !!state.deployedUrl;
+    el.deployLabelFull.textContent  = deployed ? 'Update Live' : 'Deploy Live';
+    el.deployLabelShort.textContent = deployed ? 'Update' : 'Deploy';
+    el.deployIconRocket.classList.toggle('hidden', deployed);
+    el.deployIconUpdate.classList.toggle('hidden', !deployed);
+    el.btnDeploy.title = deployed ? 'Push your latest changes live' : 'Publish your site live';
+  }
+
+  function persistProjects() {
+    // Keep the newest 40 projects; code can be large so we cap it.
+    localStorage.setItem('aws_projects', JSON.stringify(state.projects.slice(0, 40)));
+  }
+
+  // Insert or update the current project in history (newest first).
+  function saveProject() {
+    if (!state.projectId || !state.code) return;
+    const now = Date.now();
+    const existing = state.projects.find((p) => p.id === state.projectId);
+    if (existing) {
+      existing.name = state.projectName || existing.name;
+      existing.code = state.code;
+      existing.deployedUrl = state.deployedUrl || existing.deployedUrl;
+      existing.updatedAt = now;
+      // Move it to the front.
+      state.projects = [existing, ...state.projects.filter((p) => p.id !== state.projectId)];
+    } else {
+      state.projects.unshift({
+        id: state.projectId,
+        name: state.projectName || 'Untitled project',
+        code: state.code,
+        deployedUrl: state.deployedUrl || null,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    persistProjects();
+  }
+
+  function deleteProject(id) {
+    state.projects = state.projects.filter((p) => p.id !== id);
+    persistProjects();
+    renderProjects();
+    toast('Project deleted');
+  }
+
+  // Reopen a saved project in the workspace.
+  function loadProject(id) {
+    const p = state.projects.find((x) => x.id === id);
+    if (!p) return;
+    state.projectId = p.id;
+    state.projectName = p.name;
+    state.deployedUrl = p.deployedUrl || null;
+    el.projectLabel.textContent = `Project: ${p.id}`;
+    el.chatStream.innerHTML = '';
+    closeProjects();
+    showWorkspace();
+    setTab('preview');
+    renderOutput(p.code);
+    setBuildStatus('Ready', 'ok');
+    addAssistantMessage(`Reopened “${p.name}”. Tell me what you'd like to change.`);
+    if (window.innerWidth < 768) setMobilePanel('output');
+  }
+
+  function relTime(ts) {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 60) return 'just now';
+    const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+    const d = Math.floor(h / 24); return d === 1 ? 'yesterday' : `${d}d ago`;
+  }
+
+  function renderProjects() {
+    el.projectsList.innerHTML = '';
+    if (!state.projects.length) {
+      el.projectsList.innerHTML = '<p class="py-6 text-center text-sm text-slate-500">No projects yet — build your first one above.</p>';
+      return;
+    }
+    state.projects.forEach((p) => {
+      const row = document.createElement('div');
+      row.className = 'glass flex items-center gap-3 rounded-xl px-3.5 py-3';
+      row.innerHTML = `
+        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-500/15 text-brand-300">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/></svg>
+        </span>
+        <button class="proj-open min-w-0 flex-1 text-left">
+          <div class="truncate text-sm font-semibold text-white"></div>
+          <div class="mt-0.5 flex items-center gap-2 text-[11px] text-slate-500">
+            <span>${relTime(p.updatedAt)}</span>
+            ${p.deployedUrl ? '<span class="text-emerald-400">● Live</span>' : '<span class="text-slate-600">Not deployed</span>'}
+          </div>
+        </button>
+        <button class="proj-del btn shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-rose-500/15 hover:text-rose-300" title="Delete project">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>`;
+      row.querySelector('.proj-open .truncate').textContent = p.name;
+      row.querySelector('.proj-open').addEventListener('click', () => loadProject(p.id));
+      row.querySelector('.proj-del').addEventListener('click', () => deleteProject(p.id));
+      el.projectsList.appendChild(row);
+    });
+  }
+
+  function openProjects() {
+    renderProjects();
+    el.projectsModal.classList.remove('view-hidden');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeProjects() {
+    el.projectsModal.classList.add('view-hidden');
+    document.body.style.overflow = '';
   }
 
   /* ============================================================
@@ -1437,9 +1607,14 @@
   el.btnCopy.addEventListener('click', copyCode);
   el.btnDownload.addEventListener('click', downloadCode);
   el.btnDeploy.addEventListener('click', startDeploy);
-  el.btnNewProject.addEventListener('click', newProject);
+  el.btnProjects.addEventListener('click', openProjects);
   el.btnHome.addEventListener('click', () => { if (!state.busy) showHero(); });
   el.btnRefresh.addEventListener('click', () => { if (state.code) el.iframe.srcdoc = state.code; });
+
+  // Projects modal
+  el.projectsBackdrop.addEventListener('click', closeProjects);
+  $('#btn-close-projects').addEventListener('click', closeProjects);
+  $('#btn-new-from-projects').addEventListener('click', () => { closeProjects(); newProject(); });
 
   // Modal
   el.btnCloseModal.addEventListener('click', closeModal);
@@ -1453,7 +1628,7 @@
     el.btnCopyUrl.textContent = 'Copied!';
     setTimeout(() => { el.btnCopyUrl.textContent = 'Copy'; }, 1500);
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeProjects(); } });
 
   // Credits badge — tap to see how many are left / when they refill
   el.planBadge.addEventListener('click', creditsInfo);
@@ -1473,6 +1648,7 @@
   // ---------- Init ----------
   renderChips();
   initCredits();
+  updateDeployButton();
   setTab('preview');
   el.overlay.classList.add('view-hidden');
   el.heroPrompt.focus();

@@ -3,7 +3,7 @@
  *
  * Serves the front-end from /public and exposes two API routes:
  *   POST /api/generate-code   → generates a full HTML website from a prompt (Groq)
- *   POST /api/deploy-vercel    → publishes the site to a live URL (Cloudflare Workers)
+ *   POST /api/deploy-vercel   → publishes the site to a live URL (Vercel)
  *
  * Everything is FREE — no billing, no payments. Users get a pool of free
  * credits that refills automatically (handled entirely on the front-end).
@@ -14,8 +14,11 @@
  *   GROQ_API_KEY               your Groq API key (code generation)
  *   GROQ_MODEL                 model id (default: llama-3.3-70b-versatile)
  *
- *   CLOUDFLARE_API_TOKEN       token with "Workers Scripts:Edit" permission
- *   CLOUDFLARE_ACCOUNT_ID      your Cloudflare account id
+ *   VERCEL_TOKEN               Vercel access token (live deploy)
+ *   VERCEL_TEAM_ID             team/scope id (optional, only for team accounts)
+ *
+ *   GITHUB_TOKEN               optional — mirror each project to a GitHub repo
+ *   GITHUB_OWNER               your GitHub username (required if GITHUB_TOKEN set)
  */
 const express = require('express');
 const path = require('path');
@@ -99,23 +102,73 @@ app.post('/api/generate-code', async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  Deploy — Cloudflare Workers (serves the generated HTML live)      */
+/*  Deploy — Vercel (publishes the generated HTML to a live URL)      */
+/*                                                                    */
+/*  Deploying with the SAME project name every time (derived from     */
+/*  projectId) means every "Update" redeploys to the same stable      */
+/*  https://<name>.vercel.app production URL — exactly like Replit.    */
+/*  Optionally mirrors the code to a GitHub repo (GITHUB_TOKEN) so    */
+/*  every project is version-controlled too.                          */
 /* ------------------------------------------------------------------ */
 
-const CF_API = 'https://api.cloudflare.com/client/v4';
+// Turn a projectId into a safe, stable Vercel/GitHub project name.
+function projectName(projectId) {
+  return ('site-' + String(projectId || Math.random().toString(36).slice(2, 8)))
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 52);
+}
 
-async function cfSubdomain(accountId, token) {
-  const r = await fetch(`${CF_API}/accounts/${accountId}/workers/subdomain`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const d = await r.json();
-  return d?.result?.subdomain || null;
+// Best-effort mirror of the current code to a GitHub repo (create or update).
+// Never blocks deployment — failures are logged and ignored.
+async function mirrorToGitHub(name, code) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) return;
+  const owner = process.env.GITHUB_OWNER;
+  if (!owner) return;
+
+  const gh = (url, opts = {}) =>
+    fetch(`https://api.github.com${url}`, {
+      ...opts,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'ai-web-studio',
+        ...(opts.headers || {}),
+      },
+    });
+
+  try {
+    // Ensure the repo exists (ignore "already exists" errors).
+    await gh('/user/repos', {
+      method: 'POST',
+      body: JSON.stringify({ name, private: false, auto_init: true }),
+    });
+
+    // Look up the existing file sha (needed to update in place).
+    let sha;
+    const cur = await gh(`/repos/${owner}/${name}/contents/index.html`);
+    if (cur.ok) sha = (await cur.json()).sha;
+
+    await gh(`/repos/${owner}/${name}/contents/index.html`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        message: 'Update site via AI Web Studio',
+        content: Buffer.from(code, 'utf8').toString('base64'),
+        ...(sha ? { sha } : {}),
+      }),
+    });
+  } catch (err) {
+    console.warn('GitHub mirror skipped:', err.message);
+  }
 }
 
 /**
  * POST /api/deploy-vercel
  * Body:    { projectId?: string, userId?: string, code: string }
- * Returns: { url: string } — the live deployment URL
+ * Returns: { url: string } — the live production URL (stable across updates)
  */
 app.post('/api/deploy-vercel', async (req, res) => {
   const { projectId, code } = req.body || {};
@@ -123,68 +176,41 @@ app.post('/api/deploy-vercel', async (req, res) => {
     return res.status(400).json({ error: 'code is required' });
   }
 
-  const token = process.env.CLOUDFLARE_API_TOKEN;
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-  if (!token || !accountId) {
-    return res.status(501).json({ error: 'Cloudflare deploy not configured' });
+  const token = process.env.VERCEL_TOKEN;
+  if (!token) {
+    return res.status(501).json({ error: 'VERCEL_TOKEN not configured' });
   }
 
-  // A safe, unique script name (lowercase letters, digits, dashes only).
-  const scriptName = (
-    'site-' + String(projectId || Math.random().toString(36).slice(2, 8))
-  )
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .slice(0, 54);
-
-  // A tiny module Worker that serves the generated HTML on every request.
-  const workerCode =
-    'const html = ' + JSON.stringify(code) + ';\n' +
-    'export default {\n' +
-    '  async fetch() {\n' +
-    '    return new Response(html, { headers: { "content-type": "text/html;charset=UTF-8" } });\n' +
-    '  }\n' +
-    '};\n';
+  const name = projectName(projectId);
+  const teamId = process.env.VERCEL_TEAM_ID;
+  const qs = teamId ? `?teamId=${encodeURIComponent(teamId)}` : '';
 
   try {
-    // 1) Upload the Worker script (ES module, multipart form).
-    const form = new FormData();
-    form.append(
-      'metadata',
-      JSON.stringify({ main_module: 'worker.js', compatibility_date: '2024-11-01' })
-    );
-    form.append(
-      'worker.js',
-      new Blob([workerCode], { type: 'application/javascript+module' }),
-      'worker.js'
-    );
+    const r = await fetch(`https://api.vercel.com/v13/deployments${qs}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        target: 'production', // production → stable <name>.vercel.app URL
+        files: [
+          { file: 'index.html', data: Buffer.from(code, 'utf8').toString('base64'), encoding: 'base64' },
+        ],
+        projectSettings: { framework: null },
+      }),
+    });
 
-    const up = await fetch(
-      `${CF_API}/accounts/${accountId}/workers/scripts/${scriptName}`,
-      { method: 'PUT', headers: { Authorization: `Bearer ${token}` }, body: form }
-    );
-    if (!up.ok) {
-      const detail = await up.text().catch(() => '');
-      console.error('CF upload error:', up.status, detail.slice(0, 300));
-      return res.status(502).json({ error: 'deploy upload failed' });
+    const data = await r.json();
+    if (!r.ok) {
+      console.error('Vercel error:', r.status, JSON.stringify(data).slice(0, 300));
+      return res.status(502).json({ error: data?.error?.message || 'deploy failed' });
     }
 
-    // 2) Enable the workers.dev subdomain route for this script.
-    await fetch(
-      `${CF_API}/accounts/${accountId}/workers/scripts/${scriptName}/subdomain`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: true }),
-      }
-    );
+    // Mirror to GitHub in the background (does not delay the response).
+    mirrorToGitHub(name, code);
 
-    // 3) Resolve the account's workers.dev subdomain to build the public URL.
-    const sub = await cfSubdomain(accountId, token);
-    if (!sub) return res.status(502).json({ error: 'could not resolve workers.dev subdomain' });
-
-    return res.json({ url: `https://${scriptName}.${sub}.workers.dev` });
+    // Prefer the stable production alias; fall back to the project domain.
+    const alias = Array.isArray(data.alias) && data.alias.length ? data.alias[0] : `${name}.vercel.app`;
+    return res.json({ url: `https://${alias}` });
   } catch (err) {
     console.error('deploy failed:', err.message);
     return res.status(502).json({ error: 'deploy service unreachable' });
@@ -194,5 +220,6 @@ app.post('/api/deploy-vercel', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`AI Web Studio running at http://localhost:${PORT}`);
   console.log(`  Code generation : ${process.env.GROQ_API_KEY ? 'Groq (live)' : 'demo engine (no GROQ_API_KEY)'}`);
-  console.log(`  Deploy          : ${process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID ? 'Cloudflare (live)' : 'demo URL (no Cloudflare keys)'}`);
+  console.log(`  Deploy          : ${process.env.VERCEL_TOKEN ? 'Vercel (live)' : 'demo URL (no VERCEL_TOKEN)'}`);
+  console.log(`  GitHub mirror   : ${process.env.GITHUB_TOKEN && process.env.GITHUB_OWNER ? 'on' : 'off'}`);
 });
