@@ -19,6 +19,11 @@ A white-label, single-page **AI Website Builder** — dark theme, glassmorphism,
 - **Deploy & Update** — one-click **Deploy Live** publishes the site; after that the same button becomes **Update Live** and every redeploy pushes your latest edits to the **same stable URL** — exactly like Replit.
 - **Project history** — every generation, edit and deploy is saved. The **Projects** panel lets you reopen any past project (code, preview and live link restored) or delete it.
 - **Chat-driven edits** — ask for a change in the Build Console and the AI rewrites the full site with your change applied; hit *Update Live* to push it live again.
+- **Agentic build flow** — a prompt **clarity score** (0–100); below 95 the AI runs a short **clarification quiz** (option chips + free-text "Other", any language) until the brief is clear, then builds **step-by-step** with **thinking bubbles** narrating each stage ("analyzing… designing… writing HTML… animating… reviewing"). *Thorough mode* paces it deliberately for higher quality.
+- **Any model, any company** — add unlimited models in **Settings → Models**: OpenAI, Anthropic (Claude), Google (Gemini), OpenRouter or any OpenAI-compatible endpoint. Each has the right fields; the server proxies the right API shape.
+- **Secrets / env vars** — a private vault (Settings → Secrets). Values never appear in chat; the AI only sees secret **names** to wire placeholders. Paste an API key into chat and a **"Add to secrets"** prompt appears so it's stored safely instead.
+- **File upload** — attach images, 3D models (`.glb/.gltf`), video or assets to a prompt (great for 3D/animated sites; CDN libraries like three.js/GSAP are allowed for those builds).
+- **No sign-in profile** — everything (models, secrets, preferences, projects) is saved on-device. Preferences include Thorough mode, Auto-deploy and clarifying questions.
 - **Fully mobile friendly** — the header collapses to compact icon buttons, and below `768px` the workspace becomes a Chat / Output switcher.
 
 ## API contract
@@ -48,10 +53,10 @@ Users can add their own models from the **Settings** panel — no code changes, 
 The request body accepts an optional `provider`:
 
 ```
-POST /api/generate-code { prompt, provider: { endpoint, apiKey, model } }
+POST /api/generate-code { prompt, provider: { type, endpoint, apiKey, model } }
 ```
 
-When present, the server proxies the call to that provider (so there are no browser CORS issues and the key travels only to your own backend). Works with OpenAI, Groq, OpenRouter, Together, Mistral, local LLMs — anything speaking the OpenAI schema. Model settings are stored in the browser's `localStorage`.
+`type` is one of `openai` (default, also OpenRouter/Together/Mistral/local), `anthropic` (Claude) or `gemini` (Google). The server proxies the call in that provider's native shape — OpenAI chat-completions, Anthropic `/v1/messages`, or Gemini `:generateContent` — so there are no browser CORS issues and keys travel only to your own backend. For Claude and Gemini the endpoint is optional (the official URL is used). Model settings are stored in the browser's `localStorage`.
 
 ## Live deploy — Vercel
 

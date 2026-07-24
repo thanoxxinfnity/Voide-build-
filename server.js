@@ -52,40 +52,86 @@ const SYSTEM_PROMPT = [
   '- Do NOT reference any external files, frameworks, or CDNs — everything self-contained.',
 ].join('\n');
 
-// Accept either a base URL (…/v1) or a full …/chat/completions endpoint.
-function normalizeEndpoint(ep) {
-  const e = String(ep || '').trim().replace(/\/+$/, '');
-  if (!e) return '';
-  return /\/chat\/completions$/.test(e) ? e : e + '/chat/completions';
+function providerError(status, detail) {
+  const err = new Error(`provider responded ${status}`);
+  err.status = status;
+  err.detail = String(detail || '').slice(0, 300);
+  return err;
 }
 
-// Call any OpenAI-compatible chat-completions API and return the message text.
-async function chatComplete({ endpoint, apiKey, model }, messages) {
-  const url = normalizeEndpoint(endpoint);
+// --- OpenAI-compatible (OpenAI, Groq, OpenRouter, Together, Mistral, local) ---
+async function callOpenAI({ endpoint, apiKey, model }, system, user) {
+  let base = String(endpoint || '').trim().replace(/\/+$/, '');
+  const url = /\/chat\/completions$/.test(base) ? base : base + '/chat/completions';
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
+    body: JSON.stringify({
+      model,
+      temperature: 0.7,
+      max_tokens: 8000,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+    }),
+  });
+  if (!r.ok) throw providerError(r.status, await r.text().catch(() => ''));
+  const d = await r.json();
+  return d?.choices?.[0]?.message?.content || '';
+}
+
+// --- Anthropic (Claude) ---
+async function callAnthropic({ endpoint, apiKey, model }, system, user) {
+  const url = (String(endpoint || '').trim().replace(/\/+$/, '')) || 'https://api.anthropic.com/v1/messages';
   const r = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      'x-api-key': apiKey || '',
+      'anthropic-version': '2023-06-01',
     },
-    body: JSON.stringify({ model, temperature: 0.7, max_tokens: 8000, messages }),
+    body: JSON.stringify({
+      model,
+      max_tokens: 8000,
+      system,
+      messages: [{ role: 'user', content: user }],
+    }),
   });
-  if (!r.ok) {
-    const detail = await r.text().catch(() => '');
-    const err = new Error(`provider responded ${r.status}`);
-    err.status = r.status;
-    err.detail = detail.slice(0, 300);
-    throw err;
+  if (!r.ok) throw providerError(r.status, await r.text().catch(() => ''));
+  const d = await r.json();
+  return (d?.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('') || '';
+}
+
+// --- Google Gemini ---
+async function callGemini({ endpoint, apiKey, model }, system, user) {
+  const base = (String(endpoint || '').trim().replace(/\/+$/, '')) || 'https://generativelanguage.googleapis.com/v1beta';
+  const url = `${base}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey || '')}`;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: user }] }],
+      generationConfig: { temperature: 0.7, maxOutputTokens: 8000 },
+    }),
+  });
+  if (!r.ok) throw providerError(r.status, await r.text().catch(() => ''));
+  const d = await r.json();
+  return (d?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('') || '';
+}
+
+// Dispatch to the right API based on provider type.
+function callProvider(cfg, system, user) {
+  switch (cfg.type) {
+    case 'anthropic': return callAnthropic(cfg, system, user);
+    case 'gemini':    return callGemini(cfg, system, user);
+    default:          return callOpenAI(cfg, system, user); // openai / openrouter / custom / groq
   }
-  const data = await r.json();
-  return data?.choices?.[0]?.message?.content || '';
 }
 
 /**
  * POST /api/generate-code
  * Body:    { prompt, projectId?, userId?, provider? }
  *   provider (optional) — a user-added model from Settings:
- *     { endpoint: string, apiKey: string, model: string }
+ *     { type: 'openai'|'anthropic'|'gemini', endpoint?, apiKey, model }
  *   When absent, the server's default Groq config is used.
  * Returns: { code: string }  — a complete HTML document
  */
@@ -95,24 +141,24 @@ app.post('/api/generate-code', async (req, res) => {
     return res.status(400).json({ error: 'prompt is required' });
   }
 
-  // Pick the provider: a user-supplied custom model wins, else server Groq.
+  // Pick the provider: a user-supplied model wins, else server Groq.
   let cfg;
-  if (provider && provider.endpoint && provider.model) {
-    cfg = { endpoint: provider.endpoint, apiKey: provider.apiKey, model: provider.model };
+  if (provider && provider.model && (provider.endpoint || provider.type === 'anthropic' || provider.type === 'gemini')) {
+    cfg = {
+      type: provider.type || 'openai',
+      endpoint: provider.endpoint || '',
+      apiKey: provider.apiKey || '',
+      model: provider.model,
+    };
   } else if (process.env.GROQ_API_KEY) {
-    cfg = { endpoint: 'https://api.groq.com/openai/v1', apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL };
+    cfg = { type: 'openai', endpoint: 'https://api.groq.com/openai/v1', apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL };
   } else {
     return res.status(501).json({ error: 'no model configured — add one in Settings or set GROQ_API_KEY' });
   }
 
-  const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'user', content: prompt },
-  ];
-
   let raw;
   try {
-    raw = await chatComplete(cfg, messages);
+    raw = await callProvider(cfg, SYSTEM_PROMPT, prompt);
   } catch (err) {
     console.error('generation error:', err.message, err.detail || '');
     return res.status(502).json({ error: err.detail ? `${err.message}: ${err.detail}` : err.message });

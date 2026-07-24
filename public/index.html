@@ -94,6 +94,30 @@
     .typing-dot:nth-child(2) { animation-delay: .2s; }
     .typing-dot:nth-child(3) { animation-delay: .4s; }
 
+    /* ---------- Thinking bubble ---------- */
+    .thinking {
+      position: relative;
+      background: linear-gradient(120deg, rgba(99,102,241,.16), rgba(34,211,238,.10));
+      border: 1px solid rgba(129,140,248,.28);
+      overflow: hidden;
+    }
+    .thinking::after {
+      content: ""; position: absolute; inset: 0;
+      background: linear-gradient(100deg, transparent 20%, rgba(165,180,252,.16) 50%, transparent 80%);
+      background-size: 200% 100%;
+      animation: shimmerMove 2s linear infinite;
+    }
+    .brain-pulse { animation: brainPulse 1.6s ease-in-out infinite; }
+    @keyframes brainPulse { 0%,100% { opacity:.6; transform: scale(.94);} 50% { opacity:1; transform: scale(1.06);} }
+
+    /* ---------- Option chips (clarification quiz) ---------- */
+    .opt-chip { transition: transform .12s ease, border-color .2s, background-color .2s; }
+    .opt-chip:hover { transform: translateY(-1px); border-color: rgba(129,140,248,.6); background: rgba(99,102,241,.14); }
+    .opt-chip.picked { border-color: rgba(129,140,248,.8); background: rgba(99,102,241,.22); color: #fff; }
+
+    /* ---------- Score meter ---------- */
+    .score-fill { transition: width .5s cubic-bezier(.4,0,.2,1); }
+
     /* ---------- View transitions ---------- */
     .view-hidden { display: none !important; }
 
@@ -205,10 +229,15 @@
             placeholder="e.g. A modern SaaS landing page for a project-management tool, with pricing tiers, testimonials and a dark hero section…"
             class="code-area w-full resize-none bg-transparent px-4 py-3 text-[15px] leading-relaxed text-slate-100 placeholder-slate-500 outline-none"
           ></textarea>
-          <div class="flex items-center justify-between gap-3 px-2 pb-1">
-            <div class="flex items-center gap-2 pl-2 text-[11px] text-slate-500">
-              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              Private &amp; white-label — your brand only
+          <!-- Attached files -->
+          <div id="attach-row" class="flex flex-wrap gap-2 px-2 empty:hidden"></div>
+          <div class="flex items-center justify-between gap-3 px-2 pb-1 pt-1">
+            <div class="flex items-center gap-1.5">
+              <input id="file-input" type="file" multiple class="hidden" accept="image/*,.glb,.gltf,.obj,.json,.svg,.mp4,.webm,.zip" />
+              <button id="btn-attach" class="btn glass flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-slate-300 hover:text-white" title="Attach images, 3D models or assets">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                Attach
+              </button>
             </div>
             <button id="btn-generate" class="btn btn-primary flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white">
               <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13 2-2 9h5l-3 11 8-13h-6l3-7z"/></svg>
@@ -400,49 +429,103 @@
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
 
-      <div class="mb-4">
-        <h3 class="text-lg font-bold text-white">AI Models</h3>
-        <p class="mt-1 text-sm text-slate-400">Add any OpenAI-compatible model and pick which one builds your sites.</p>
-      </div>
-
-      <!-- Active model list (server default is always the first option) -->
-      <div id="models-list" class="space-y-2"></div>
-
-      <!-- Add model button -->
-      <button id="btn-add-model" class="btn glass mt-4 flex w-full items-center justify-center gap-2 rounded-xl border-dashed px-4 py-2.5 text-sm font-semibold text-slate-200 hover:border-white/25 hover:bg-white/10">
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-        Add Model
-      </button>
-
-      <!-- Add / edit model form (hidden until "Add Model") -->
-      <div id="model-form" class="view-hidden mt-4 space-y-3 rounded-2xl border border-white/10 bg-black/25 p-4">
+      <div class="mb-4 flex items-center gap-3">
+        <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-accent-500 text-sm font-bold text-white">V</span>
         <div>
-          <label class="mb-1 block text-xs font-medium text-slate-400">Name</label>
-          <input id="mf-label" type="text" placeholder="e.g. My OpenRouter GPT-4o" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-slate-400">API Base URL</label>
-          <input id="mf-endpoint" type="url" placeholder="https://api.openai.com/v1" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
-          <p class="mt-1 text-[11px] text-slate-600">Base URL (…/v1) or full …/chat/completions endpoint.</p>
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-slate-400">Model ID</label>
-          <input id="mf-model" type="text" placeholder="gpt-4o-mini" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-slate-400">API Key</label>
-          <input id="mf-key" type="password" placeholder="sk-…" autocomplete="off" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
-          <p class="mt-1 text-[11px] text-slate-600">Stored only in this browser; sent to your server just to call the model.</p>
-        </div>
-        <div class="flex gap-2 pt-1">
-          <button id="btn-save-model" class="btn btn-primary flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white">Save Model</button>
-          <button id="btn-cancel-model" class="btn glass rounded-xl px-4 py-2.5 text-sm font-medium text-slate-200 hover:text-white">Cancel</button>
+          <h3 class="text-lg font-bold text-white">Your Profile</h3>
+          <p class="text-xs text-slate-400">No sign-in needed — everything is saved on this device.</p>
         </div>
       </div>
 
-      <div class="mt-4 flex items-start gap-2 rounded-xl border border-white/10 bg-white/5 p-3 text-[11px] leading-relaxed text-slate-400">
-        <svg class="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-        Works with OpenAI, Groq, OpenRouter, Together, Mistral and any OpenAI-compatible API. The selected model is used for both generating and editing sites.
+      <!-- Tabs -->
+      <div class="mb-4 flex gap-1 rounded-xl bg-black/25 p-1">
+        <button data-stab="models" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Models</button>
+        <button data-stab="secrets" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Secrets</button>
+        <button data-stab="prefs" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Preferences</button>
+      </div>
+
+      <!-- TAB: Models ------------------------------------------------ -->
+      <div id="stab-models">
+        <p class="mb-3 text-sm text-slate-400">Add unlimited models from any company and pick the active one.</p>
+        <div id="models-list" class="space-y-2"></div>
+
+        <button id="btn-add-model" class="btn glass mt-4 flex w-full items-center justify-center gap-2 rounded-xl border-dashed px-4 py-2.5 text-sm font-semibold text-slate-200 hover:border-white/25 hover:bg-white/10">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Add Model
+        </button>
+
+        <!-- Add / edit model form -->
+        <div id="model-form" class="view-hidden mt-4 space-y-3 rounded-2xl border border-white/10 bg-black/25 p-4">
+          <div>
+            <label class="mb-1 block text-xs font-medium text-slate-400">Provider</label>
+            <select id="mf-type" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400/60">
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="gemini">Google (Gemini)</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="custom">Other / Custom (OpenAI-compatible)</option>
+            </select>
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-slate-400">Name</label>
+            <input id="mf-label" type="text" placeholder="e.g. Claude Sonnet" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+          </div>
+          <div id="mf-endpoint-wrap">
+            <label class="mb-1 block text-xs font-medium text-slate-400">API Base URL <span id="mf-endpoint-opt" class="text-slate-600"></span></label>
+            <input id="mf-endpoint" type="text" placeholder="https://api.openai.com/v1" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-slate-400">Model ID</label>
+            <input id="mf-model" type="text" placeholder="gpt-4o-mini" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-slate-400">API Key</label>
+            <input id="mf-key" type="password" placeholder="paste your key…" autocomplete="off" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+            <p class="mt-1 text-[11px] text-slate-600">Stored only in this browser; sent to your server just to call the model.</p>
+          </div>
+          <div class="flex gap-2 pt-1">
+            <button id="btn-save-model" class="btn btn-primary flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white">Save Model</button>
+            <button id="btn-cancel-model" class="btn glass rounded-xl px-4 py-2.5 text-sm font-medium text-slate-200 hover:text-white">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: Secrets ----------------------------------------------- -->
+      <div id="stab-secrets" class="view-hidden">
+        <p class="mb-3 text-sm text-slate-400">Environment variables &amp; API keys for your sites. Kept private — never shown in chat.</p>
+        <div id="secrets-list" class="space-y-2"></div>
+
+        <div class="mt-4 grid grid-cols-1 gap-2 rounded-2xl border border-white/10 bg-black/25 p-4 sm:grid-cols-[1fr_1fr_auto]">
+          <input id="sf-name" type="text" placeholder="NAME (e.g. STRIPE_KEY)" class="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+          <input id="sf-value" type="password" placeholder="value" autocomplete="off" class="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+          <button id="btn-add-secret" class="btn btn-primary rounded-lg px-4 py-2 text-sm font-semibold text-white">Add</button>
+        </div>
+        <p class="mt-2 text-[11px] text-slate-600">The AI can see secret <b>names</b> to wire them up, but values stay on this device.</p>
+      </div>
+
+      <!-- TAB: Preferences ------------------------------------------- -->
+      <div id="stab-prefs" class="view-hidden space-y-3">
+        <label class="glass flex cursor-pointer items-center justify-between rounded-xl px-4 py-3">
+          <span>
+            <span class="block text-sm font-semibold text-white">Thorough mode</span>
+            <span class="block text-xs text-slate-400">Plan step-by-step and think out loud (slower, higher quality).</span>
+          </span>
+          <input id="pf-thorough" type="checkbox" class="h-5 w-5 accent-brand-500" />
+        </label>
+        <label class="glass flex cursor-pointer items-center justify-between rounded-xl px-4 py-3">
+          <span>
+            <span class="block text-sm font-semibold text-white">Auto-deploy after build</span>
+            <span class="block text-xs text-slate-400">Publish (or update) the live site automatically when a build finishes.</span>
+          </span>
+          <input id="pf-autodeploy" type="checkbox" class="h-5 w-5 accent-brand-500" />
+        </label>
+        <label class="glass flex cursor-pointer items-center justify-between rounded-xl px-4 py-3">
+          <span>
+            <span class="block text-sm font-semibold text-white">Ask clarifying questions</span>
+            <span class="block text-xs text-slate-400">Interview me until the prompt is clear (95+) before building.</span>
+          </span>
+          <input id="pf-clarify" type="checkbox" class="h-5 w-5 accent-brand-500" />
+        </label>
       </div>
     </div>
   </div>
@@ -573,6 +656,10 @@
     projects: JSON.parse(localStorage.getItem('aws_projects') || '[]'),
     models: JSON.parse(localStorage.getItem('aws_models') || '[]'),
     activeModelId: localStorage.getItem('aws_active_model') || null, // null = server default
+    secrets: JSON.parse(localStorage.getItem('aws_secrets') || '[]'),
+    prefs: Object.assign({ thorough: true, autoDeploy: false, clarify: true },
+      JSON.parse(localStorage.getItem('aws_prefs') || '{}')),
+    attachments: [], // files attached to the current prompt (not persisted)
   };
 
   // ---------- DOM shortcuts ----------
@@ -616,16 +703,29 @@
     projectsModal:    $('#projects-modal'),
     projectsBackdrop: $('#projects-backdrop'),
     projectsList:     $('#projects-list'),
-    // settings modal (AI models)
+    // settings / profile modal
     btnSettings:      $('#btn-settings'),
     settingsModal:    $('#settings-modal'),
     settingsBackdrop: $('#settings-backdrop'),
     modelsList:       $('#models-list'),
     modelForm:        $('#model-form'),
+    mfType:           $('#mf-type'),
     mfLabel:          $('#mf-label'),
     mfEndpoint:       $('#mf-endpoint'),
+    mfEndpointWrap:   $('#mf-endpoint-wrap'),
+    mfEndpointOpt:    $('#mf-endpoint-opt'),
     mfModel:          $('#mf-model'),
     mfKey:            $('#mf-key'),
+    secretsList:      $('#secrets-list'),
+    sfName:           $('#sf-name'),
+    sfValue:          $('#sf-value'),
+    pfThorough:       $('#pf-thorough'),
+    pfAutodeploy:     $('#pf-autodeploy'),
+    pfClarify:        $('#pf-clarify'),
+    // hero attach
+    fileInput:        $('#file-input'),
+    btnAttach:        $('#btn-attach'),
+    attachRow:        $('#attach-row'),
     // modal
     modal:         $('#deploy-modal'),
     modalBackdrop: $('#deploy-backdrop'),
@@ -905,7 +1005,7 @@
     const payload = { prompt, projectId: state.projectId, userId: state.userId };
     // Send the user-selected custom model (server proxies the call).
     if (model) {
-      payload.provider = { endpoint: model.endpoint, apiKey: model.apiKey, model: model.model };
+      payload.provider = { type: model.type || 'openai', endpoint: model.endpoint, apiKey: model.apiKey, model: model.model };
     }
     try {
       const res = await fetch(API.generate, {
@@ -1139,6 +1239,9 @@
     state.projectName = null;
     state.code = '';
     state.deployedUrl = null;
+    state.attachments = [];
+    clarify = null; scoreNode = null;
+    renderAttachments();
     el.chatStream.innerHTML = '';
     el.codeContent.innerHTML = '&lt;!-- Your generated code will appear here --&gt;';
     el.iframe.srcdoc = '';
@@ -1311,12 +1414,32 @@
     toast('Model removed');
   }
 
+  // Per-provider presets: placeholders + whether the endpoint is optional.
+  const PROVIDER_META = {
+    openai:     { model: 'gpt-4o-mini',                endpoint: 'https://api.openai.com/v1',                    optional: false },
+    anthropic:  { model: 'claude-sonnet-4-20250514',   endpoint: 'https://api.anthropic.com/v1/messages',        optional: true  },
+    gemini:     { model: 'gemini-2.0-flash',           endpoint: 'https://generativelanguage.googleapis.com/v1beta', optional: true  },
+    openrouter: { model: 'openai/gpt-4o-mini',         endpoint: 'https://openrouter.ai/api/v1',                 optional: false },
+    custom:     { model: 'model-id',                   endpoint: 'https://your-host/v1',                         optional: false },
+  };
+
+  // Adjust the form fields to the selected provider.
+  function configureModelForm(type) {
+    const meta = PROVIDER_META[type] || PROVIDER_META.openai;
+    el.mfModel.placeholder = meta.model;
+    el.mfEndpoint.placeholder = meta.endpoint;
+    el.mfEndpointOpt.textContent = meta.optional ? '(optional — official endpoint used if blank)' : '';
+  }
+
   function showModelForm(model) {
     editingModelId = model ? model.id : null;
-    el.mfLabel.value    = model ? model.label : '';
-    el.mfEndpoint.value = model ? model.endpoint : '';
-    el.mfModel.value    = model ? model.model : '';
-    el.mfKey.value      = model ? model.apiKey : '';
+    const type = model ? (model.type || 'openai') : 'openai';
+    el.mfType.value    = type;
+    el.mfLabel.value   = model ? model.label : '';
+    el.mfEndpoint.value = model ? (model.endpoint || '') : '';
+    el.mfModel.value   = model ? model.model : '';
+    el.mfKey.value     = model ? model.apiKey : '';
+    configureModelForm(type);
     el.modelForm.classList.remove('view-hidden');
     el.mfLabel.focus();
   }
@@ -1326,20 +1449,26 @@
   }
 
   function saveModel() {
+    const type = el.mfType.value;
     const label = el.mfLabel.value.trim();
     const endpoint = el.mfEndpoint.value.trim();
     const model = el.mfModel.value.trim();
     const apiKey = el.mfKey.value.trim();
-    if (!label || !endpoint || !model) {
-      toast('Name, API base URL and Model ID are required', 'error');
+    const meta = PROVIDER_META[type] || PROVIDER_META.openai;
+    if (!label || !model) {
+      toast('Name and Model ID are required', 'error');
+      return;
+    }
+    if (!endpoint && !meta.optional) {
+      toast('API base URL is required for this provider', 'error');
       return;
     }
     if (editingModelId) {
       const m = state.models.find((x) => x.id === editingModelId);
-      if (m) Object.assign(m, { label, endpoint, model, apiKey });
+      if (m) Object.assign(m, { type, label, endpoint, model, apiKey });
     } else {
       const id = 'mdl_' + Math.random().toString(36).slice(2, 10);
-      state.models.unshift({ id, label, endpoint, model, apiKey });
+      state.models.unshift({ id, type, label, endpoint, model, apiKey });
       state.activeModelId = id; // auto-select a freshly added model
     }
     persistModels();
@@ -1347,6 +1476,8 @@
     renderModels();
     toast('Model saved — now active ⚡', 'success');
   }
+
+  const PROVIDER_NAMES = { openai: 'OpenAI', anthropic: 'Claude', gemini: 'Gemini', openrouter: 'OpenRouter', custom: 'Custom' };
 
   function modelRow({ id, label, active, sub, custom }) {
     const row = document.createElement('div');
@@ -1389,13 +1520,12 @@
 
     // User-added models.
     state.models.forEach((m) => {
-      let host = m.endpoint;
-      try { host = new URL(m.endpoint).host; } catch {}
+      const provName = PROVIDER_NAMES[m.type] || 'OpenAI';
       const row = modelRow({
         id: m.id,
         label: m.label,
         active: state.activeModelId === m.id,
-        sub: `${m.model} · ${host}`,
+        sub: `${provName} · ${m.model}`,
         custom: true,
       });
       row.querySelector('.mdl-pick').addEventListener('click', () => selectModel(m.id));
@@ -1405,15 +1535,97 @@
     });
   }
 
-  function openSettings() {
+  function setSettingsTab(tab) {
+    ['models', 'secrets', 'prefs'].forEach((t) => {
+      $('#stab-' + t).classList.toggle('view-hidden', t !== tab);
+    });
+    document.querySelectorAll('.stab').forEach((b) => {
+      const on = b.dataset.stab === tab;
+      b.classList.toggle('bg-white/10', on);
+      b.classList.toggle('text-white', on);
+      b.classList.toggle('text-slate-400', !on);
+    });
+  }
+
+  function openSettings(tab) {
     hideModelForm();
     renderModels();
+    renderSecrets();
+    el.pfThorough.checked = !!state.prefs.thorough;
+    el.pfAutodeploy.checked = !!state.prefs.autoDeploy;
+    el.pfClarify.checked = !!state.prefs.clarify;
+    setSettingsTab(tab || 'models');
     el.settingsModal.classList.remove('view-hidden');
     document.body.style.overflow = 'hidden';
   }
   function closeSettings() {
     el.settingsModal.classList.add('view-hidden');
     document.body.style.overflow = '';
+  }
+
+  /* ============================================================
+   *  SECRETS  (environment variables — never shown in chat)
+   * ============================================================ */
+  function persistSecrets() {
+    localStorage.setItem('aws_secrets', JSON.stringify(state.secrets.slice(0, 100)));
+  }
+  function persistPrefs() {
+    localStorage.setItem('aws_prefs', JSON.stringify(state.prefs));
+  }
+
+  // Names only — safe to hand to the model so it can wire placeholders.
+  function secretNames() { return state.secrets.map((s) => s.name); }
+
+  function addSecret(name, value) {
+    name = String(name || '').trim();
+    value = String(value || '');
+    if (!name) { toast('Secret name is required', 'error'); return false; }
+    const key = name.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+    const existing = state.secrets.find((s) => s.name === key);
+    if (existing) existing.value = value;
+    else state.secrets.unshift({ name: key, value });
+    persistSecrets();
+    renderSecrets();
+    toast(`Secret ${key} saved 🔒`, 'success');
+    return true;
+  }
+  function deleteSecret(name) {
+    state.secrets = state.secrets.filter((s) => s.name !== name);
+    persistSecrets();
+    renderSecrets();
+  }
+
+  function renderSecrets() {
+    el.secretsList.innerHTML = '';
+    if (!state.secrets.length) {
+      el.secretsList.innerHTML = '<p class="py-3 text-center text-sm text-slate-500">No secrets yet.</p>';
+      return;
+    }
+    state.secrets.forEach((s) => {
+      const row = document.createElement('div');
+      row.className = 'glass flex items-center gap-3 rounded-xl px-3.5 py-2.5';
+      row.innerHTML = `
+        <svg class="h-4 w-4 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-sm font-semibold text-white"></div>
+          <div class="secret-val mt-0.5 truncate font-mono text-[11px] text-slate-500">••••••••</div>
+        </div>
+        <button class="secret-reveal btn shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-white/10 hover:text-white" title="Show / hide">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+        <button class="secret-del btn shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-rose-500/15 hover:text-rose-300" title="Delete">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+        </button>`;
+      row.querySelector('.truncate').textContent = s.name;
+      const valEl = row.querySelector('.secret-val');
+      let shown = false;
+      row.querySelector('.secret-reveal').addEventListener('click', () => {
+        shown = !shown;
+        valEl.textContent = shown ? (s.value || '(empty)') : '••••••••';
+      });
+      row.querySelector('.secret-del').addEventListener('click', () => deleteSecret(s.name));
+      el.secretsList.appendChild(row);
+    });
   }
 
   /* ============================================================
@@ -1796,19 +2008,355 @@
   }
 
   /* ============================================================
+   *  AGENTIC BUILD — attachments, secrets, prompt score,
+   *  clarification quiz, thinking bubbles & step-by-step build
+   * ============================================================ */
+
+  // Slower, deliberate pacing in Thorough mode.
+  const pace = (ms) => new Promise((r) => setTimeout(r, state.prefs.thorough ? ms : Math.round(ms * 0.3)));
+
+  // ---------- Attachments (images / 3D models / assets) ----------
+  function handleFiles(list) {
+    Array.from(list || []).forEach((f) => {
+      const kind = f.type.startsWith('image/') ? 'image'
+        : /\.(glb|gltf|obj|fbx)$/i.test(f.name) ? '3D model'
+        : /\.(mp4|webm|mov)$/i.test(f.name) ? 'video' : 'file';
+      const item = { name: f.name, kind, size: f.size };
+      if (kind === 'image' && f.size < 2000000) {
+        const rd = new FileReader();
+        rd.onload = () => { item.dataUrl = rd.result; };
+        rd.readAsDataURL(f);
+      }
+      state.attachments.push(item);
+    });
+    renderAttachments();
+  }
+  function renderAttachments() {
+    el.attachRow.innerHTML = '';
+    state.attachments.forEach((a, i) => {
+      const chip = document.createElement('span');
+      chip.className = 'glass inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] text-slate-300';
+      chip.innerHTML = `<span>${a.kind === 'image' ? '🖼️' : a.kind === '3D model' ? '🧊' : a.kind === 'video' ? '🎬' : '📎'}</span><span class="max-w-[130px] truncate"></span><button class="att-x ml-0.5 text-slate-500 hover:text-rose-300" title="Remove">✕</button>`;
+      chip.querySelector('.truncate').textContent = a.name;
+      chip.querySelector('.att-x').addEventListener('click', () => { state.attachments.splice(i, 1); renderAttachments(); });
+      el.attachRow.appendChild(chip);
+    });
+  }
+
+  // ---------- Secret detection in chat ----------
+  function detectApiKey(text) {
+    const patterns = [
+      /sk-ant-[A-Za-z0-9\-_]{20,}/, /sk-proj-[A-Za-z0-9\-_]{20,}/, /sk-[A-Za-z0-9]{20,}/,
+      /AIza[0-9A-Za-z\-_]{30,}/, /gsk_[A-Za-z0-9]{20,}/, /ghp_[A-Za-z0-9]{20,}/,
+      /xox[baprs]-[A-Za-z0-9-]{10,}/, /r8_[A-Za-z0-9]{20,}/,
+    ];
+    for (const re of patterns) { const m = text.match(re); if (m) return m[0]; }
+    return null;
+  }
+  function addSecretPromptBlock(value) {
+    const wrap = document.createElement('div');
+    wrap.className = 'log-line ml-9 rounded-xl border border-amber-400/30 bg-amber-500/10 px-3.5 py-3 text-sm';
+    wrap.innerHTML = `
+      <div class="mb-2 flex items-center gap-2 text-amber-200">
+        <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        That looks like an API key — keep it safe in Secrets instead of chat?
+      </div>
+      <button class="add-secret btn btn-primary rounded-lg px-3 py-1.5 text-xs font-semibold text-white">Add to secrets</button>`;
+    wrap.querySelector('.add-secret').addEventListener('click', () => {
+      openSettings('secrets');
+      el.sfValue.value = value;
+      el.sfName.focus();
+      wrap.querySelector('.add-secret').textContent = 'Opened Secrets →';
+    });
+    el.chatStream.appendChild(wrap);
+    scrollChat();
+  }
+
+  // ---------- Prompt clarity score + clarification quiz ----------
+  const ASPECTS = [
+    { id: 'type',     q: 'What kind of site is this?',            options: ['Landing page', 'Portfolio', 'Dashboard', 'Online store', 'Blog', 'Web app'], test: (p) => /(landing|portfolio|dashboard|shop|store|e-?commerce|blog|web ?app|website|site for)/.test(p) },
+    { id: 'style',    q: 'What visual style / theme do you want?', options: ['Dark & modern', 'Light & minimal', 'Colorful & playful', 'Corporate', 'Luxury / elegant'], test: (p) => /(dark|light|minimal|modern|colou?rful|playful|corporate|luxury|elegant|theme|neon|glass)/.test(p) },
+    { id: 'sections', q: 'Which sections do you need?', multi: true, options: ['Hero', 'Features', 'Pricing', 'Testimonials', 'Gallery', 'Contact form', 'FAQ', 'Footer'], test: (p) => /(hero|feature|pricing|testimonial|gallery|contact|faq|footer|about|team|section)/.test(p) },
+    { id: 'anim',     q: 'Any animations or 3D?',                 options: ['Smooth animations', '3D models', 'Both', 'Keep it simple'], test: (p) => /(anim|3d|three|motion|parallax|scroll|interactive|hover|transition)/.test(p) },
+    { id: 'goal',     q: 'Main goal / call-to-action?',           options: ['Sign up', 'Buy now', 'Contact', 'Book a demo', 'Download', 'Just informational'], test: (p) => /(sign ?up|buy|purchase|checkout|contact|book|demo|download|subscribe|call to action|cta|lead)/.test(p) },
+    { id: 'brand',    q: 'Brand name & tagline (or use placeholders)?', options: ["I'll type it", 'Use placeholder content'], test: (p) => /(called|named|brand|company|["'].+["']|for a |for my )/.test(p) },
+  ];
+
+  function scorePrompt(p, coveredCount) {
+    const total = ASPECTS.length;
+    const cov = (coveredCount != null) ? coveredCount : ASPECTS.filter((a) => a.test(p)).length;
+    let score = Math.round((cov / total) * 100);
+    if (p && p.trim().length > 220) score = Math.max(score, 92);
+    return Math.min(score, 100);
+  }
+
+  let clarify = null;
+  let scoreNode = null;
+
+  function renderScoreBubble() {
+    const score = scorePrompt(clarify.prompt.toLowerCase(), clarify.covered.size);
+    if (!scoreNode) {
+      scoreNode = document.createElement('div');
+      scoreNode.className = 'log-line ml-9 rounded-xl border border-white/10 bg-black/25 px-3.5 py-2.5';
+      el.chatStream.appendChild(scoreNode);
+    }
+    const ok = score >= 95;
+    scoreNode.innerHTML = `
+      <div class="mb-1.5 flex items-center justify-between text-[11px]">
+        <span class="font-semibold text-slate-300">Prompt clarity</span>
+        <span class="font-bold ${ok ? 'text-emerald-300' : 'text-amber-300'}">${score}/100</span>
+      </div>
+      <div class="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+        <div class="score-fill h-full rounded-full ${ok ? 'bg-emerald-400' : 'bg-gradient-to-r from-brand-500 to-accent-500'}" style="width:${score}%"></div>
+      </div>
+      <div class="mt-1.5 text-[10px] text-slate-500">${ok ? 'Great — I have enough to build.' : 'Answer a couple more to reach 95+.'}</div>`;
+    scrollChat();
+  }
+
+  function addQuestionBlock(asp, onAnswer) {
+    const wrap = document.createElement('div');
+    wrap.className = 'log-line flex justify-start';
+    wrap.innerHTML = `
+      <div class="flex max-w-[92%] gap-2.5">
+        <span class="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-accent-500 text-white">
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 10h.01M12 10h.01M16 10h.01M21 12a8 8 0 0 1-11.5 7.2L3 21l1.8-6.5A8 8 0 1 1 21 12z"/></svg>
+        </span>
+        <div class="glass rounded-2xl rounded-tl-md px-4 py-3 text-sm text-slate-200">
+          <div class="q-text mb-2.5 font-medium"></div>
+          <div class="q-opts flex flex-wrap gap-2"></div>
+          <div class="mt-2.5 flex gap-2">
+            <input class="q-other min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-[13px] text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" placeholder="Or type your own…">
+            <button class="q-send btn btn-primary shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-white">Send</button>
+          </div>
+          <button class="q-skip mt-2 block text-[11px] text-slate-500 hover:text-slate-300">Skip · just build now →</button>
+        </div>
+      </div>`;
+    wrap.querySelector('.q-text').textContent = asp.q;
+    const opts = wrap.querySelector('.q-opts');
+    const picked = new Set();
+    const lock = () => wrap.querySelectorAll('button,input').forEach((x) => { x.disabled = true; });
+
+    asp.options.forEach((o) => {
+      const b = document.createElement('button');
+      b.className = 'opt-chip rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[12.5px] text-slate-300';
+      b.textContent = o;
+      b.addEventListener('click', () => {
+        if (asp.multi) {
+          if (picked.has(o)) { picked.delete(o); b.classList.remove('picked'); }
+          else { picked.add(o); b.classList.add('picked'); }
+        } else { lock(); onAnswer(o); }
+      });
+      opts.appendChild(b);
+    });
+
+    wrap.querySelector('.q-send').addEventListener('click', () => {
+      const other = wrap.querySelector('.q-other').value.trim();
+      const val = other || Array.from(picked).join(', ');
+      if (!val) { toast('Pick an option or type an answer', 'error'); return; }
+      lock();
+      onAnswer(val);
+    });
+    wrap.querySelector('.q-other').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); wrap.querySelector('.q-send').click(); }
+    });
+    wrap.querySelector('.q-skip').addEventListener('click', () => { lock(); finishClarify(); });
+
+    el.chatStream.appendChild(wrap);
+    scrollChat();
+  }
+
+  function startClarify(prompt, covered) {
+    clarify = { prompt, covered, answers: {}, queue: ASPECTS.filter((a) => !covered.has(a.id)) };
+    addAssistantMessage("Before I build, let me get this exactly right. A few quick questions — pick an option or type your own.");
+    renderScoreBubble();
+    askNextClar();
+  }
+  function askNextClar() {
+    renderScoreBubble();
+    const score = scorePrompt(clarify.prompt.toLowerCase(), clarify.covered.size);
+    if (score >= 95 || clarify.queue.length === 0) { finishClarify(); return; }
+    const asp = clarify.queue.shift();
+    addQuestionBlock(asp, (val) => {
+      clarify.answers[asp.id] = val;
+      clarify.covered.add(asp.id);
+      addUserMessage(val);
+      askNextClar();
+    });
+  }
+  function finishClarify() {
+    if (!clarify) return;
+    const answers = clarify.answers;
+    const base = clarify.prompt;
+    const spec = Object.keys(answers).map((k) => `- ${k}: ${answers[k]}`).join('\n');
+    clarify = null; scoreNode = null;
+    const full = base + (spec ? `\n\nAdditional requirements:\n${spec}` : '');
+    addAssistantMessage('Perfect — I have a clear picture now. Starting the build. 🛠️');
+    runBuild(full);
+  }
+
+  // ---------- Compose the final model prompt ----------
+  function composeBuildPrompt(base) {
+    let p = base;
+    const names = secretNames();
+    if (names.length) {
+      p += `\n\nAvailable environment variable NAMES (reference them as clearly-marked placeholders in the code; NEVER invent real secret values): ${names.join(', ')}.`;
+    }
+    if (state.attachments.length) {
+      const list = state.attachments.map((a) => `${a.name} (${a.kind})`).join(', ');
+      p += `\n\nThe user attached these assets to reference in the design: ${list}.`;
+    }
+    if (/\b(3d|three\.?js|animation|animate|motion|parallax)\b/i.test(base)) {
+      p += `\n\nThis site needs rich animation/3D — you MAY load well-known CDN libraries (e.g. three.js, GSAP) via <script src> for this build.`;
+    }
+    return p;
+  }
+
+  function planFromPrompt(p) {
+    const lc = p.toLowerCase();
+    const plan = ['Structure: header, main content, footer'];
+    if (/pricing/.test(lc)) plan.push('Pricing section with tiers');
+    if (/testimonial|review/.test(lc)) plan.push('Testimonials');
+    if (/gallery|portfolio|work|showcase/.test(lc)) plan.push('Gallery / work showcase');
+    if (/contact|form|book|demo/.test(lc)) plan.push('Contact / lead form');
+    if (/\b(3d|animation|animate|motion|parallax)\b/.test(lc)) plan.push('Animations / 3D interactions');
+    plan.push('Responsive, mobile-first layout');
+    plan.push('Accessible, polished visual style');
+    return plan;
+  }
+
+  // ---------- The build itself (thinking bubbles + steps) ----------
+  async function runBuild(finalPrompt) {
+    if (state.busy) return;
+    state.busy = true;
+    el.btnGenerate.disabled = true;
+    el.btnRefine.disabled = true;
+    setTab('preview');
+    showOverlay('Building your website…', 'The AI engine is working through it');
+    setBuildStatus('Building', 'building');
+
+    const genPromise = apiGenerateCode(composeBuildPrompt(finalPrompt)); // start the real call now
+
+    const think = addThinking('Analyzing your requirements…');
+    await pace(1000);
+
+    setThinking(think, 'Designing the layout & structure…');
+    addAssistantMessage("Here's my plan:");
+    const pblock = createLogBlock();
+    for (const s of planFromPrompt(finalPrompt)) { addLogLine(pblock, s, 'ok'); await pace(180); }
+    await pace(600);
+
+    const steps = [
+      'Writing semantic HTML…',
+      'Styling with a polished design system…',
+      'Building out each section & its content…',
+      'Wiring up interactions & animations…',
+      'Making it fully responsive for mobile…',
+      'Reviewing, cleaning up & final checks…',
+    ];
+    const sblock = createLogBlock();
+    for (const s of steps) { setThinking(think, s); addLogLine(sblock, s, 'run'); await pace(950); }
+    setThinking(think, 'Finalizing your website…');
+
+    try {
+      const { code, source } = await genPromise;
+      think.remove();
+      addLogLine(sblock, 'Complete! ✓ Build succeeded', 'ok');
+      renderOutput(code);
+      setBuildStatus('Ready', 'ok');
+      state.credits = Math.max(0, state.credits - GENERATION_COST);
+      saveCredits(); renderCredits(); saveProject();
+      addAssistantMessage(source === 'mock'
+        ? "Here's a first version from the demo engine. Add your own model in Settings for full AI builds — then tell me what to change."
+        : 'Your website is ready! Check the live preview and tell me what to tweak — I\'ll update it.');
+      if (window.innerWidth < 768) setMobilePanel('output');
+      toast('Website ready ✨', 'success');
+      state.attachments = []; renderAttachments();
+      if (state.prefs.autoDeploy) setTimeout(() => startDeploy(), 500);
+    } catch (err) {
+      think.remove();
+      addLogLine(sblock, `Build failed: ${err.message}`, 'err');
+      setBuildStatus('Error', 'err');
+      showOverlay('Generation failed', 'Please try again in a moment');
+      addAssistantMessage('Something went wrong during the build. Please try again.');
+      toast('Generation failed — please retry', 'error');
+    } finally {
+      state.busy = false;
+      el.btnGenerate.disabled = false;
+      el.btnRefine.disabled = false;
+    }
+  }
+
+  // Thinking-bubble helpers.
+  function addThinking(text) {
+    const wrap = document.createElement('div');
+    wrap.className = 'log-line flex justify-start';
+    wrap.innerHTML = `
+      <div class="flex max-w-[90%] gap-2.5">
+        <span class="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-accent-500 text-white brain-pulse">
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 1 2 2v1a7 7 0 0 1 4 6.3V17a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5.7A7 7 0 0 1 10 5V4a2 2 0 0 1 2-2z"/><path d="M9 20v2M15 20v2"/></svg>
+        </span>
+        <div class="thinking rounded-2xl rounded-tl-md px-4 py-2.5 text-sm leading-relaxed text-slate-200"><span class="think-text"></span></div>
+      </div>`;
+    wrap.querySelector('.think-text').textContent = text;
+    el.chatStream.appendChild(wrap);
+    scrollChat();
+    return wrap;
+  }
+  function setThinking(node, text) { if (node) node.querySelector('.think-text').textContent = text; scrollChat(); }
+
+  // ---------- Orchestrator: validate → (clarify) → build ----------
+  function beginBuild(rawPrompt) {
+    if (state.busy) return;
+    const prompt = (rawPrompt || '').trim();
+    if (!prompt) { toast('Describe what you want to build first ✍️', 'error'); el.heroPrompt.focus(); return; }
+    if (state.credits < GENERATION_COST) {
+      toast(`Out of credits — ${CREDIT_REFILL} more free in ${daysToRefill()} day(s) ⏳`, 'error');
+      return;
+    }
+
+    state.projectId = state.projectId || pid();
+    state.projectName = prompt.slice(0, 42) + (prompt.length > 42 ? '…' : '');
+    el.projectLabel.textContent = `Project: ${state.projectId}`;
+
+    showWorkspace();
+    setMobilePanel('chat');
+    setTab('preview');
+    el.chatStream.innerHTML = '';
+
+    const n = state.attachments.length;
+    addUserMessage(prompt + (n ? `  ·  📎 ${n} file${n > 1 ? 's' : ''}` : ''));
+
+    const key = detectApiKey(prompt);
+    if (key) addSecretPromptBlock(key);
+
+    const covered = new Set(ASPECTS.filter((a) => a.test(prompt.toLowerCase())).map((a) => a.id));
+    const score = scorePrompt(prompt.toLowerCase(), covered.size);
+
+    if (state.prefs.clarify && score < 95) startClarify(prompt, covered);
+    else runBuild(prompt);
+  }
+
+  /* ============================================================
    *  EVENT WIRING
    * ============================================================ */
   // Hero
-  el.btnGenerate.addEventListener('click', () => startGeneration(el.heroPrompt.value));
+  el.btnGenerate.addEventListener('click', () => beginBuild(el.heroPrompt.value));
   el.heroPrompt.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); startGeneration(el.heroPrompt.value); }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); beginBuild(el.heroPrompt.value); }
   });
 
-  // Refine
+  // Attach files
+  el.btnAttach.addEventListener('click', () => el.fileInput.click());
+  el.fileInput.addEventListener('change', () => { handleFiles(el.fileInput.files); el.fileInput.value = ''; });
+
+  // Refine (with API-key paste guard)
   el.btnRefine.addEventListener('click', () => {
     const v = el.refinePrompt.value;
     el.refinePrompt.value = '';
     autoGrow(el.refinePrompt);
+    if (!v.trim()) return;
+    const key = detectApiKey(v);
+    if (key) { addUserMessage(v); addSecretPromptBlock(key); return; }
     startRefinement(v);
   });
   el.refinePrompt.addEventListener('keydown', (e) => {
@@ -1845,13 +2393,24 @@
   $('#btn-close-projects').addEventListener('click', closeProjects);
   $('#btn-new-from-projects').addEventListener('click', () => { closeProjects(); newProject(); });
 
-  // Settings modal (AI models)
-  el.btnSettings.addEventListener('click', openSettings);
+  // Settings / profile modal
+  el.btnSettings.addEventListener('click', () => openSettings('models'));
   el.settingsBackdrop.addEventListener('click', closeSettings);
   $('#btn-close-settings').addEventListener('click', closeSettings);
   $('#btn-add-model').addEventListener('click', () => showModelForm(null));
   $('#btn-save-model').addEventListener('click', saveModel);
   $('#btn-cancel-model').addEventListener('click', hideModelForm);
+  el.mfType.addEventListener('change', () => configureModelForm(el.mfType.value));
+  document.querySelectorAll('.stab').forEach((b) => b.addEventListener('click', () => setSettingsTab(b.dataset.stab)));
+  // Secrets
+  $('#btn-add-secret').addEventListener('click', () => {
+    if (addSecret(el.sfName.value, el.sfValue.value)) { el.sfName.value = ''; el.sfValue.value = ''; }
+  });
+  el.sfValue.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btn-add-secret').click(); });
+  // Preferences
+  el.pfThorough.addEventListener('change', () => { state.prefs.thorough = el.pfThorough.checked; persistPrefs(); });
+  el.pfAutodeploy.addEventListener('change', () => { state.prefs.autoDeploy = el.pfAutodeploy.checked; persistPrefs(); });
+  el.pfClarify.addEventListener('change', () => { state.prefs.clarify = el.pfClarify.checked; persistPrefs(); });
 
   // Modal
   el.btnCloseModal.addEventListener('click', closeModal);
