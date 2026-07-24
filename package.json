@@ -1,15 +1,17 @@
 {
   "name": "ai-web-studio",
   "version": "1.0.0",
-  "description": "White-label AI website builder — dark glassmorphism UI with live preview, code editor and one-click deploy.",
+  "description": "White-label AI website builder — dark glassmorphism UI with live preview, code editor and one-click deploy. Free forever, credits refill every 15 days.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js"
   },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
-    "express": "^4.22.2",
-    "razorpay": "^2.9.5"
+    "express": "^4.22.2"
   },
   "license": "UNLICENSED",
   "private": true

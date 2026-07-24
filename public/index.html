@@ -127,7 +127,7 @@
         </svg>
         <span class="absolute -inset-1 -z-10 rounded-xl bg-brand-500/30 blur-md transition-opacity group-hover:opacity-100 opacity-0"></span>
       </span>
-      <span class="text-left leading-tight">
+      <span class="hidden text-left leading-tight sm:block">
         <span class="block text-[15px] font-bold tracking-tight text-white">AI Web Studio</span>
         <span class="hidden text-[11px] font-medium text-slate-400 sm:block">Prompt → Website, instantly</span>
       </span>
@@ -135,17 +135,17 @@
 
     <!-- Right cluster -->
     <div class="flex items-center gap-2 sm:gap-3">
-      <!-- Plan / credits badge — opens Billing & Autopay -->
-      <button id="plan-badge" class="btn glass hidden items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-semibold hover:border-white/20 sm:flex" title="Billing &amp; Autopay"></button>
+      <!-- Free credits badge (refills every 15 days) -->
+      <button id="plan-badge" class="btn glass flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-semibold hover:border-white/20 sm:gap-2 sm:px-3.5 sm:text-xs" title="Free credits — refill every 15 days"></button>
 
       <!-- New Project -->
-      <button id="btn-new-project" class="btn glass flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10">
+      <button id="btn-new-project" class="btn glass flex items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="New Project">
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
         <span class="hidden md:inline">New Project</span>
       </button>
 
       <!-- Download Code -->
-      <button id="btn-download" class="btn glass flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10" disabled>
+      <button id="btn-download" class="btn glass flex items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="Download Code" disabled>
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
         <span class="hidden md:inline">Download Code</span>
       </button>
@@ -441,109 +441,6 @@
     </div>
   </div>
 
-  <!-- ============================================================ -->
-  <!-- BILLING / AUTOPAY MODAL                                      -->
-  <!-- ============================================================ -->
-  <div id="billing-modal" class="view-hidden fixed inset-0 z-50 grid place-items-center p-4">
-    <div id="billing-backdrop" class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
-    <div class="glass-strong animate-pop nice-scroll relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl p-6">
-      <button id="btn-close-billing" class="btn absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" title="Close">
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-      </button>
-
-      <!-- State: choose plan -->
-      <div id="billing-state-plans">
-        <div class="mb-5 text-center">
-          <h3 class="text-lg font-bold text-white">Billing &amp; Autopay</h3>
-          <p class="mt-1 text-sm text-slate-400">Upgrade once — every renewal after that is fully automatic.</p>
-        </div>
-        <div class="grid gap-3 sm:grid-cols-2">
-          <!-- Pro Monthly -->
-          <div class="glass relative flex flex-col rounded-2xl border-brand-400/40 p-4">
-            <span class="absolute -top-2.5 right-4 rounded-full bg-gradient-to-r from-brand-500 to-accent-500 px-2.5 py-0.5 text-[10px] font-bold text-white">POPULAR</span>
-            <h4 class="text-sm font-semibold text-white">Pro · Monthly</h4>
-            <div class="mt-2 flex items-baseline gap-1"><span class="text-2xl font-extrabold text-white">₹499</span><span class="text-xs text-slate-400">/month</span></div>
-            <ul class="mt-3 flex-1 space-y-1.5 text-xs text-slate-300">
-              <li class="flex items-center gap-2"><svg class="h-3.5 w-3.5 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Unlimited generations</li>
-              <li class="flex items-center gap-2"><svg class="h-3.5 w-3.5 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Priority live deploys</li>
-              <li class="flex items-center gap-2"><svg class="h-3.5 w-3.5 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Auto-renews via Autopay</li>
-              <li class="flex items-center gap-2"><svg class="h-3.5 w-3.5 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Cancel anytime</li>
-            </ul>
-            <button data-plan="pro_monthly" class="plan-buy btn btn-primary mt-4 w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white">Enable Autopay — ₹499/mo</button>
-          </div>
-          <!-- Pro Yearly -->
-          <div class="glass relative flex flex-col rounded-2xl p-4">
-            <span class="absolute -top-2.5 right-4 rounded-full bg-emerald-500/90 px-2.5 py-0.5 text-[10px] font-bold text-white">2 MONTHS FREE</span>
-            <h4 class="text-sm font-semibold text-white">Pro · Yearly</h4>
-            <div class="mt-2 flex items-baseline gap-1"><span class="text-2xl font-extrabold text-white">₹4,999</span><span class="text-xs text-slate-400">/year</span></div>
-            <ul class="mt-3 flex-1 space-y-1.5 text-xs text-slate-300">
-              <li class="flex items-center gap-2"><svg class="h-3.5 w-3.5 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Everything in Monthly</li>
-              <li class="flex items-center gap-2"><svg class="h-3.5 w-3.5 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Save ₹989 per year</li>
-              <li class="flex items-center gap-2"><svg class="h-3.5 w-3.5 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>One auto-debit a year</li>
-              <li class="flex items-center gap-2"><svg class="h-3.5 w-3.5 shrink-0 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Cancel anytime</li>
-            </ul>
-            <button data-plan="pro_yearly" class="plan-buy btn glass mt-4 w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-100 hover:border-white/25 hover:bg-white/10">Enable Autopay — ₹4,999/yr</button>
-          </div>
-        </div>
-        <div class="mt-4 flex items-center justify-center gap-2 text-[11px] text-slate-500">
-          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          Secure UPI Autopay / card e-mandate · Cancel anytime · No hidden charges
-        </div>
-      </div>
-
-      <!-- State: processing -->
-      <div id="billing-state-processing" class="view-hidden flex flex-col items-center py-4 text-center">
-        <div class="relative mb-5">
-          <div class="h-16 w-16 animate-spin-slow rounded-full border-2 border-white/10 border-t-brand-400"></div>
-          <svg class="absolute inset-0 m-auto h-7 w-7 text-brand-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
-        </div>
-        <h3 class="text-lg font-bold text-white">Setting up Autopay…</h3>
-        <p id="billing-step" class="mt-1.5 text-sm text-slate-400">Creating secure Autopay mandate…</p>
-        <div class="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-          <div class="shimmer h-full w-1/2 rounded-full"></div>
-        </div>
-      </div>
-
-      <!-- State: success -->
-      <div id="billing-state-success" class="view-hidden flex flex-col items-center py-2 text-center">
-        <div class="mb-4 grid h-16 w-16 place-items-center rounded-full bg-emerald-500/15">
-          <svg class="h-8 w-8 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-        </div>
-        <h3 class="text-lg font-bold text-white">⚡ Autopay Active!</h3>
-        <p id="billing-success-sub" class="mt-1.5 text-sm text-slate-400">—</p>
-        <div id="billing-next-charge" class="mt-4 w-full rounded-xl border border-white/10 bg-black/30 p-3 text-xs leading-relaxed text-slate-300">—</div>
-        <button id="btn-billing-done" class="btn btn-primary mt-5 w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white">Start Building</button>
-      </div>
-
-      <!-- State: manage subscription -->
-      <div id="billing-state-manage" class="view-hidden">
-        <div class="mb-5 text-center">
-          <h3 class="text-lg font-bold text-white">Your Subscription</h3>
-          <p class="mt-1 text-sm text-slate-400">Autopay keeps your plan running — nothing to do manually.</p>
-        </div>
-        <div class="glass rounded-2xl px-4 py-1 text-sm">
-          <div class="flex items-center justify-between py-2.5"><span class="text-slate-400">Plan</span><span id="manage-plan" class="font-semibold text-white">—</span></div>
-          <div class="flex items-center justify-between border-t border-white/10 py-2.5"><span class="text-slate-400">Status</span><span id="manage-status" class="font-semibold text-emerald-300">Autopay ON</span></div>
-          <div class="flex items-center justify-between border-t border-white/10 py-2.5"><span class="text-slate-400">Next auto-debit</span><span id="manage-next" class="font-semibold text-white">—</span></div>
-          <div class="flex items-center justify-between border-t border-white/10 py-2.5"><span class="text-slate-400">Payment method</span><span class="font-semibold text-white">UPI Autopay mandate</span></div>
-        </div>
-        <p class="mb-2 mt-4 text-xs font-semibold uppercase tracking-widest text-slate-500">Payment history</p>
-        <div id="billing-history" class="space-y-2"></div>
-        <button id="btn-cancel-autopay" class="btn mt-5 w-full rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-2.5 text-sm font-semibold text-rose-300 hover:bg-rose-500/20">Cancel Autopay</button>
-      </div>
-
-      <!-- State: error -->
-      <div id="billing-state-error" class="view-hidden flex flex-col items-center py-2 text-center">
-        <div class="mb-4 grid h-16 w-16 place-items-center rounded-full bg-rose-500/15">
-          <svg class="h-8 w-8 text-rose-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-        </div>
-        <h3 class="text-lg font-bold text-white">Payment failed</h3>
-        <p id="billing-error-msg" class="mt-1.5 text-sm text-slate-400">The Autopay mandate could not be set up.</p>
-        <button id="btn-billing-retry" class="btn btn-primary mt-5 rounded-xl px-5 py-2.5 text-sm font-semibold text-white">Try Again</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Toast container -->
   <div id="toast-root" class="pointer-events-none fixed bottom-5 left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2"></div>
 
@@ -561,13 +458,13 @@
 
   // ---------- Configuration ----------
   const API = {
-    generate:      '/api/generate-code',
-    deploy:        '/api/deploy-vercel',
-    subscribe:     '/api/billing/subscribe',
-    billingStatus: '/api/billing/status',
-    cancelBilling: '/api/billing/cancel',
+    generate: '/api/generate-code',
+    deploy:   '/api/deploy-vercel',
   };
-  const GENERATION_COST = 1; // credits per generation (free plan only)
+  const GENERATION_COST = 1;   // credits per generation
+  const CREDIT_REFILL   = 499; // free credits granted each cycle
+  const REFILL_DAYS     = 15;  // cycle length — credits refill every 15 days
+  const DAY_MS          = 86400000;
 
   // ---------- Session identity ----------
   const uid = () => 'u_' + Math.random().toString(36).slice(2, 10);
@@ -580,10 +477,8 @@
     projectId: null,
     projectName: null,
     code: '',
-    credits: Number(localStorage.getItem('aws_credits_v2') ?? 100),
-    plan: localStorage.getItem('aws_plan') || 'free',
-    sub: JSON.parse(localStorage.getItem('aws_sub') || 'null'),
-    payments: JSON.parse(localStorage.getItem('aws_payments') || '[]'),
+    credits: CREDIT_REFILL,      // set for real by initCredits()
+    creditsResetAt: 0,           // set for real by initCredits()
     busy: false,
     deployedUrl: null,
     activeTab: 'preview',
@@ -620,14 +515,6 @@
     btnHome:       $('#btn-home'),
     btnRefresh:    $('#btn-refresh-preview'),
     planBadge:     $('#plan-badge'),
-    // billing modal
-    billingModal:      $('#billing-modal'),
-    billingBackdrop:   $('#billing-backdrop'),
-    billingStep:       $('#billing-step'),
-    billingSuccessSub: $('#billing-success-sub'),
-    billingNextCharge: $('#billing-next-charge'),
-    billingErrMsg:     $('#billing-error-msg'),
-    billingHistory:    $('#billing-history'),
     viewportToggles: $('#viewport-toggles'),
     // modal
     modal:         $('#deploy-modal'),
@@ -691,23 +578,47 @@
     }, 2600);
   }
 
-  // ---------- Plan badge (credits / PRO + Autopay status) ----------
-  function renderPlanBadge() {
-    localStorage.setItem('aws_credits_v2', String(state.credits));
-    if (state.plan === 'pro') {
-      const autopayOn = state.sub?.autopay;
-      el.planBadge.innerHTML = `
-        <svg class="h-3.5 w-3.5 text-amber-300" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4.09 12.11a.6.6 0 0 0 .45 1H10l-1 9 8.91-10.11a.6.6 0 0 0-.45-1H14l-1-9z"/></svg>
-        <span class="text-amber-200">PRO Plan</span>
-        <span class="mx-1 h-3 w-px bg-white/15"></span>
-        <span class="${autopayOn ? 'text-emerald-300' : 'text-slate-400'}">${autopayOn ? 'Autopay ON' : 'Till ' + fmtDate(state.sub?.nextBillingAt)}</span>`;
+  // ---------- Free-credit system (refills every 15 days) ----------
+  function saveCredits() {
+    localStorage.setItem('aws_credits_v3', String(state.credits));
+    localStorage.setItem('aws_credits_reset', String(state.creditsResetAt));
+  }
+
+  function daysToRefill() {
+    return Math.max(0, Math.ceil((state.creditsResetAt - Date.now()) / DAY_MS));
+  }
+
+  // Load stored credits and apply a refill if the 15-day cycle has elapsed.
+  function initCredits() {
+    const now = Date.now();
+    const storedReset = Number(localStorage.getItem('aws_credits_reset') || 0);
+    const storedCredits = localStorage.getItem('aws_credits_v3');
+
+    if (!storedReset || now >= storedReset) {
+      // First run, or the cycle is over → grant a fresh batch.
+      state.credits = CREDIT_REFILL;
+      state.creditsResetAt = now + REFILL_DAYS * DAY_MS;
+      saveCredits();
+      if (storedReset) toast(`Credits refilled — ${CREDIT_REFILL} free credits ⚡`, 'success');
     } else {
-      el.planBadge.innerHTML = `
-        <svg class="h-3.5 w-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
-        <span class="text-slate-300">Free Credits: <b class="font-bold text-white">${state.credits}</b></span>
-        <span class="mx-1 h-3 w-px bg-white/15"></span>
-        <span class="text-brand-300">Upgrade ⚡</span>`;
+      state.credits = storedCredits === null ? CREDIT_REFILL : Number(storedCredits);
+      state.creditsResetAt = storedReset;
     }
+    renderCredits();
+  }
+
+  function renderCredits() {
+    const days = daysToRefill();
+    const low = state.credits <= 0;
+    el.planBadge.innerHTML = `
+      <svg class="h-3.5 w-3.5 ${low ? 'text-rose-300' : 'text-brand-300'}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+      <span class="text-slate-300">Credits <b class="font-bold ${low ? 'text-rose-300' : 'text-white'}">${state.credits}</b></span>
+      <span class="mx-0.5 hidden h-3 w-px bg-white/15 sm:inline-block"></span>
+      <span class="hidden text-slate-400 sm:inline">+${CREDIT_REFILL} in ${days}d</span>`;
+  }
+
+  function creditsInfo() {
+    toast(`${state.credits} credits left · ${CREDIT_REFILL} more in ${daysToRefill()} day(s)`, state.credits > 0 ? 'info' : 'error');
   }
 
   // ---------- Chat / log rendering ----------
@@ -921,9 +832,8 @@
   async function startGeneration(prompt) {
     if (state.busy) return;
     if (!prompt.trim()) { toast('Describe what you want to build first ✍️', 'error'); el.heroPrompt.focus(); return; }
-    if (state.plan !== 'pro' && state.credits < GENERATION_COST) {
-      toast('You are out of free credits — enable Autopay to keep building', 'error');
-      openBilling('plans');
+    if (state.credits < GENERATION_COST) {
+      toast(`Out of credits — ${CREDIT_REFILL} more free in ${daysToRefill()} day(s) ⏳`, 'error');
       return;
     }
 
@@ -953,10 +863,9 @@
       renderOutput(code);
       setBuildStatus('Ready', 'ok');
       addAssistantMessage('Your website is ready! Check the live preview on the right — and tell me what you\'d like to change or add.');
-      if (state.plan !== 'pro') {
-        state.credits = Math.max(0, state.credits - GENERATION_COST);
-        renderPlanBadge();
-      }
+      state.credits = Math.max(0, state.credits - GENERATION_COST);
+      saveCredits();
+      renderCredits();
       if (window.innerWidth < 768) setMobilePanel('output');
       toast('Website generated ✨', 'success');
     } catch (err) {
@@ -1056,217 +965,6 @@
       setModalState('error');
       toast('Deployment failed', 'error');
     }
-  }
-
-  /* ============================================================
-   *  BILLING & AUTOPAY
-   *  Live mode: POST /api/billing/subscribe returns a hosted
-   *  checkout URL where the user authorizes a recurring mandate
-   *  (UPI Autopay / card e-mandate); the gateway webhook then
-   *  activates the plan and every renewal is charged automatically.
-   *  Demo mode: subscription activates instantly so the full flow
-   *  is testable before the gateway keys are configured.
-   * ============================================================ */
-  const BILLING_PLANS = {
-    pro_monthly: { label: 'Pro · Monthly', price: '₹499',   per: '/month', months: 1 },
-    pro_yearly:  { label: 'Pro · Yearly',  price: '₹4,999', per: '/year',  months: 12 },
-  };
-  const BILLING_STEPS = [
-    'Creating secure Autopay mandate…',
-    'Contacting payment gateway…',
-    'Waiting for authorization…',
-    'Activating your plan…',
-  ];
-  let billingStepTimer = null;
-  let pendingPlanId = null;
-
-  function saveBilling() {
-    localStorage.setItem('aws_plan', state.plan);
-    if (state.sub) localStorage.setItem('aws_sub', JSON.stringify(state.sub));
-    else localStorage.removeItem('aws_sub');
-    localStorage.setItem('aws_payments', JSON.stringify(state.payments.slice(0, 20)));
-  }
-  function fmtDate(iso) {
-    return iso ? new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
-  }
-  function nextBillingDate(planId) {
-    const d = new Date();
-    d.setMonth(d.getMonth() + (BILLING_PLANS[planId]?.months || 1));
-    return d;
-  }
-  function addPayment(label, amount) {
-    state.payments.unshift({
-      id: 'pay_' + Math.random().toString(36).slice(2, 10),
-      label, amount,
-      date: new Date().toISOString(),
-    });
-  }
-
-  function openBilling(which) {
-    el.billingModal.classList.remove('view-hidden');
-    document.body.style.overflow = 'hidden';
-    setBillingState(which || (state.plan === 'pro' ? 'manage' : 'plans'));
-  }
-  function closeBilling() {
-    el.billingModal.classList.add('view-hidden');
-    document.body.style.overflow = '';
-    clearInterval(billingStepTimer);
-  }
-  function setBillingState(which) {
-    ['plans', 'processing', 'success', 'manage', 'error'].forEach((s) => {
-      $('#billing-state-' + s).classList.toggle('view-hidden', s !== which);
-    });
-    if (which === 'manage') renderManage();
-  }
-
-  async function apiSubscribe(planId) {
-    const payload = { planId, userId: state.userId };
-    try {
-      const res = await fetch(API.subscribe, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(`Billing API responded ${res.status}`);
-      const data = await res.json();
-
-      // Live gateway flow: authorize the mandate on the hosted page,
-      // then poll until the webhook marks the subscription active.
-      if (data.checkoutUrl) {
-        window.open(data.checkoutUrl, '_blank', 'noopener');
-        const deadline = Date.now() + 120000;
-        while (Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, 3000));
-          const s = await fetch(`${API.billingStatus}?userId=${encodeURIComponent(state.userId)}`);
-          if (s.ok) {
-            const d = await s.json();
-            if (d.subscription?.status === 'active') return d.subscription;
-          }
-        }
-        throw new Error('Payment confirmation timed out');
-      }
-      if (data.subscription) return data.subscription;
-      throw new Error('Billing API returned no subscription');
-    } catch (err) {
-      console.warn('[AI Web Studio] Billing falling back to demo mode:', err.message);
-      await new Promise((r) => setTimeout(r, 2800));
-      return {
-        id: 'sub_demo_' + Math.random().toString(36).slice(2, 10),
-        planId, status: 'active', autopay: true,
-        nextBillingAt: nextBillingDate(planId).toISOString(),
-      };
-    }
-  }
-
-  async function startSubscription(planId) {
-    pendingPlanId = planId;
-    const plan = BILLING_PLANS[planId];
-    setBillingState('processing');
-    let i = 0;
-    el.billingStep.textContent = BILLING_STEPS[0];
-    clearInterval(billingStepTimer);
-    billingStepTimer = setInterval(() => {
-      i = Math.min(i + 1, BILLING_STEPS.length - 1);
-      el.billingStep.textContent = BILLING_STEPS[i];
-    }, 900);
-
-    try {
-      const sub = await apiSubscribe(planId);
-      clearInterval(billingStepTimer);
-      state.plan = 'pro';
-      state.sub = {
-        id: sub.id, planId, status: 'active', autopay: true,
-        nextBillingAt: sub.nextBillingAt || nextBillingDate(planId).toISOString(),
-      };
-      addPayment(`${plan.label} — first Autopay charge`, plan.price);
-      saveBilling();
-      renderPlanBadge();
-      el.billingSuccessSub.textContent = `${plan.label} is now active with automatic renewals.`;
-      el.billingNextCharge.textContent = `Next auto-debit of ${plan.price} on ${fmtDate(state.sub.nextBillingAt)} — no action needed from you.`;
-      setBillingState('success');
-      toast('Autopay enabled — welcome to PRO ⚡', 'success');
-    } catch (err) {
-      clearInterval(billingStepTimer);
-      el.billingErrMsg.textContent = err.message || 'The Autopay mandate could not be set up.';
-      setBillingState('error');
-      toast('Payment failed — please retry', 'error');
-    }
-  }
-
-  function renderManage() {
-    const plan = BILLING_PLANS[state.sub?.planId] || {};
-    $('#manage-plan').textContent = plan.label || '—';
-    const st = $('#manage-status');
-    if (state.sub?.autopay) {
-      st.textContent = 'Autopay ON';
-      st.className = 'font-semibold text-emerald-300';
-      $('#manage-next').textContent = `${plan.price} on ${fmtDate(state.sub.nextBillingAt)}`;
-    } else {
-      st.textContent = 'Autopay cancelled';
-      st.className = 'font-semibold text-amber-300';
-      $('#manage-next').textContent = `— (Pro active till ${fmtDate(state.sub?.nextBillingAt)})`;
-    }
-    $('#btn-cancel-autopay').classList.toggle('view-hidden', !state.sub?.autopay);
-
-    el.billingHistory.innerHTML = '';
-    if (!state.payments.length) {
-      el.billingHistory.innerHTML = '<p class="text-xs text-slate-500">No payments yet.</p>';
-      return;
-    }
-    state.payments.forEach((p) => {
-      const row = document.createElement('div');
-      row.className = 'glass flex items-center justify-between rounded-xl px-3.5 py-2.5 text-xs';
-      row.innerHTML = `
-        <div>
-          <div class="font-medium text-slate-200"></div>
-          <div class="mt-0.5 text-slate-500">${fmtDate(p.date)} · ${p.id}</div>
-        </div>
-        <span class="font-bold text-emerald-300">${p.amount}</span>`;
-      row.querySelector('.font-medium').textContent = p.label;
-      el.billingHistory.appendChild(row);
-    });
-  }
-
-  async function cancelAutopay() {
-    if (!state.sub) return;
-    try {
-      const res = await fetch(API.cancelBilling, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: state.userId, subscriptionId: state.sub.id }),
-      });
-      if (!res.ok) throw new Error(`Billing API responded ${res.status}`);
-    } catch (err) {
-      console.warn('[AI Web Studio] Cancel falling back to demo mode:', err.message);
-    }
-    state.sub.autopay = false;
-    state.sub.status = 'cancelled';
-    saveBilling();
-    renderPlanBadge();
-    renderManage();
-    toast(`Autopay cancelled — Pro stays active till ${fmtDate(state.sub.nextBillingAt)}`);
-  }
-
-  // Runs on load: applies any due Autopay renewal (or downgrade after a
-  // cancelled period ends). In production the gateway webhook is the
-  // source of truth; this keeps the demo lifecycle honest.
-  function checkAutopayRenewal() {
-    if (!state.sub) return;
-    if (Date.now() < new Date(state.sub.nextBillingAt).getTime()) return;
-    if (state.sub.autopay) {
-      const plan = BILLING_PLANS[state.sub.planId];
-      state.sub.nextBillingAt = nextBillingDate(state.sub.planId).toISOString();
-      addPayment(`${plan.label} — Autopay renewal`, plan.price);
-      saveBilling();
-      toast(`Autopay: ${plan.price} charged — plan renewed automatically ⚡`, 'success');
-    } else {
-      state.plan = 'free';
-      state.sub = null;
-      state.credits = Math.max(state.credits, 100);
-      saveBilling();
-      toast('Pro period ended — you are back on the Free plan');
-    }
-    renderPlanBadge();
   }
 
   // ---------- Download ----------
@@ -1755,16 +1453,10 @@
     el.btnCopyUrl.textContent = 'Copied!';
     setTimeout(() => { el.btnCopyUrl.textContent = 'Copy'; }, 1500);
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeBilling(); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 
-  // Billing & Autopay
-  el.planBadge.addEventListener('click', () => openBilling());
-  $('#btn-close-billing').addEventListener('click', closeBilling);
-  el.billingBackdrop.addEventListener('click', closeBilling);
-  $('#btn-billing-done').addEventListener('click', closeBilling);
-  $('#btn-billing-retry').addEventListener('click', () => (pendingPlanId ? startSubscription(pendingPlanId) : setBillingState('plans')));
-  $('#btn-cancel-autopay').addEventListener('click', cancelAutopay);
-  document.querySelectorAll('.plan-buy').forEach((b) => b.addEventListener('click', () => startSubscription(b.dataset.plan)));
+  // Credits badge — tap to see how many are left / when they refill
+  el.planBadge.addEventListener('click', creditsInfo);
 
   // Mobile panels
   el.mTabChat.addEventListener('click', () => setMobilePanel('chat'));
@@ -1780,8 +1472,7 @@
 
   // ---------- Init ----------
   renderChips();
-  renderPlanBadge();
-  checkAutopayRenewal();
+  initCredits();
   setTab('preview');
   el.overlay.classList.add('view-hidden');
   el.heroPrompt.focus();

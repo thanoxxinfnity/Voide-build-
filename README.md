@@ -1,54 +1,56 @@
 # AI Web Studio
 
-A white-label, single-page **AI Website Builder** UI — dark theme, glassmorphism, Tailwind CSS and vanilla JavaScript. No third-party AI or hosting branding anywhere in the interface.
+A white-label, single-page **AI Website Builder** — dark theme, glassmorphism, Tailwind CSS and vanilla JavaScript. No third-party branding anywhere in the interface. **Free forever** — no payments, no subscriptions. Every user gets a pool of free credits that refills automatically every 15 days.
 
 ## What's included
 
 | File | Purpose |
 |---|---|
 | `public/index.html` | The complete front-end app (self-contained: markup, styles, logic) |
-| `server.js` | Reference Express server with the two API routes stubbed out |
+| `public/tailwind.css` | Compiled Tailwind build — no CDN dependency |
+| `server.js` | Express server: code generation (Groq) + live deploy (Cloudflare) |
 | `package.json` | Minimal manifest (`express` only) |
 
 ## Features
 
 - **Hero / prompt state** — headline, large prompt textarea (`Ctrl+Enter` to submit), 6 one-click template chips (SaaS, Portfolio, Crypto Dashboard, Store, Restaurant, Blog).
-- **Split-screen workspace** — left *Build Console* with chat bubbles + animated terminal build logs ("Analyzing prompt…", "Writing Tailwind CSS styles…", "Complete!") and a follow-up refine input; right panel with **Live Preview** (sandboxed iframe) and **Code Editor** tabs (syntax-highlighted, Copy Code button), plus desktop/tablet/mobile viewport toggles.
-- **Header** — custom "AI Web Studio" branding, ⚡ PRO Plan + credits badge, New Project, Download Code (saves the generated `index.html`), and 🚀 Deploy Live.
-- **Deploy modal** — animated deploying → success (live URL with Copy / Visit) → error states.
-- **Mobile friendly** — panels collapse into a Chat / Output switcher below `768px`.
+- **Split-screen workspace** — left *Build Console* with chat bubbles + animated terminal build logs and a follow-up refine input; right panel with **Live Preview** (sandboxed iframe) and **Code Editor** tabs (syntax-highlighted, Copy Code), plus desktop/tablet/mobile viewport toggles.
+- **Free credits** — every account starts with **499 credits** and gets a fresh **499 every 15 days**, fully automatic. The header badge shows how many are left and the days until the next refill; tap it any time for a reminder.
+- **One-click deploy** — animated deploying → success (live URL with Copy / Visit) → error states.
+- **Fully mobile friendly** — the header collapses to compact icon buttons, and below `768px` the workspace becomes a Chat / Output switcher.
 
 ## API contract
 
-The front-end calls these endpoints and degrades gracefully to a built-in mock engine when they're absent, so the UI is fully demoable before the backend is wired up:
+The front-end calls these two endpoints and degrades gracefully to a built-in demo engine when they're absent, so the UI is fully usable before the backend is wired up:
 
 ```
-POST /api/generate-code      { prompt, projectId, userId }  →  { code }
-POST /api/deploy-vercel      { projectId, userId, code }    →  { url }
-POST /api/billing/subscribe  { planId, userId }             →  { checkoutUrl } | { subscription }
-GET  /api/billing/status     ?userId=…                      →  { subscription }
-POST /api/billing/cancel     { userId, subscriptionId }     →  { subscription }
-POST /api/billing/webhook    (gateway → server)             →  { ok }
+POST /api/generate-code   { prompt, projectId, userId }  →  { code }
+POST /api/deploy-vercel   { projectId, userId, code }    →  { url }
 ```
 
-## Payment automation (Autopay)
+## Code generation — Groq
 
-Recurring billing is fully automated — the user pays once to authorize a mandate, and every renewal after that is charged automatically:
-
-1. **Subscribe** — the plan badge (or running out of credits) opens the Billing modal. Choosing *Pro Monthly ₹499* or *Pro Yearly ₹4,999* calls `POST /api/billing/subscribe`.
-2. **Mandate setup** — in live mode the server creates a Razorpay Subscription and returns its hosted `checkoutUrl`, where the user authorizes a **UPI Autopay / card e-mandate**. The front-end polls `GET /api/billing/status` until it flips to active.
-3. **Auto-renewal** — the gateway auto-debits each cycle and fires `subscription.charged` to `POST /api/billing/webhook` (HMAC-verified), which extends the plan — zero manual payments.
-4. **Failure & cancel** — `subscription.halted` / `.cancelled` webhooks turn Autopay off; **Cancel Autopay** in the modal cancels at cycle end, so Pro stays active for the period already paid.
-
-Live mode needs these env vars (demo mode works without them — subscriptions activate instantly so the whole flow is testable):
+`POST /api/generate-code` sends the prompt to Groq's chat-completions API and returns a complete, self-contained HTML document. Configure:
 
 ```
-RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET      API keys
-RAZORPAY_PLAN_PRO_MONTHLY / _PRO_YEARLY    plan ids created in the dashboard
-RAZORPAY_WEBHOOK_SECRET                    webhook signing secret
+GROQ_API_KEY    your Groq API key
+GROQ_MODEL      model id (optional, default: llama-3.3-70b-versatile)
 ```
 
-The gateway is server-side only — per the white-label rules, no payment-provider branding appears anywhere in the UI ("Secure UPI Autopay / card e-mandate").
+Without `GROQ_API_KEY` the route returns `501` and the front-end falls back to its built-in themed demo generator, so the whole UI still works.
+
+## Live deploy — Cloudflare Workers
+
+`POST /api/deploy-vercel` publishes the generated HTML as a tiny Cloudflare Worker and returns its public `*.workers.dev` URL. Configure:
+
+```
+CLOUDFLARE_API_TOKEN    token with "Workers Scripts:Edit" permission
+CLOUDFLARE_ACCOUNT_ID   your Cloudflare account id
+```
+
+It uploads a module Worker that serves the HTML, enables the `workers.dev` subdomain for that script, and resolves your account subdomain to build the final URL. Without the keys the route returns `501` and the UI shows a demo URL.
+
+> **Note:** enable your `workers.dev` subdomain once in the Cloudflare dashboard (Workers & Pages → your subdomain) before the first live deploy.
 
 ## Run it
 
@@ -57,4 +59,4 @@ npm install
 npm start          # http://localhost:3000
 ```
 
-Or open `public/index.html` directly in a browser — the mock engine keeps every flow working.
+Requires **Node 18+** (uses the built-in `fetch`, `FormData` and `Blob`). Or open `public/index.html` directly — the demo engine keeps every flow working.

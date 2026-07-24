@@ -1,227 +1,198 @@
 /**
- * AI Web Studio — Express backend (reference implementation)
+ * AI Web Studio — Express backend
  *
- * Serves the front-end from /public and exposes the API routes the UI calls.
+ * Serves the front-end from /public and exposes two API routes:
+ *   POST /api/generate-code   → generates a full HTML website from a prompt (Groq)
+ *   POST /api/deploy-vercel    → publishes the site to a live URL (Cloudflare Workers)
  *
- * Billing / Autopay: powered by Razorpay Subscriptions (UPI Autopay / card
- * e-mandate). Set these env vars to go live:
- *   RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET     — API keys
- *   RAZORPAY_PLAN_PRO_MONTHLY                — plan id (₹499/month)
- *   RAZORPAY_PLAN_PRO_YEARLY                 — plan id (₹4,999/year)
- *   RAZORPAY_WEBHOOK_SECRET                  — webhook signing secret
- * Without keys, billing runs in demo mode (instantly-active subscriptions)
- * so the front-end remains fully functional during development.
+ * Everything is FREE — no billing, no payments. Users get a pool of free
+ * credits that refills automatically (handled entirely on the front-end).
+ *
+ * Configure with environment variables (all optional — without them the
+ * front-end falls back to its built-in demo engine so the UI stays usable):
+ *
+ *   GROQ_API_KEY               your Groq API key (code generation)
+ *   GROQ_MODEL                 model id (default: llama-3.3-70b-versatile)
+ *
+ *   CLOUDFLARE_API_TOKEN       token with "Workers Scripts:Edit" permission
+ *   CLOUDFLARE_ACCOUNT_ID      your Cloudflare account id
  */
 const express = require('express');
 const path = require('path');
-const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-/* ------------------------------------------------------------------ */
-/*  Billing configuration                                             */
-/* ------------------------------------------------------------------ */
-const PLANS = {
-  pro_monthly: { label: 'Pro Monthly', amount: 49900,  currency: 'INR', months: 1,  razorpayPlanId: process.env.RAZORPAY_PLAN_PRO_MONTHLY },
-  pro_yearly:  { label: 'Pro Yearly',  amount: 499900, currency: 'INR', months: 12, razorpayPlanId: process.env.RAZORPAY_PLAN_PRO_YEARLY },
-};
-
-// In-memory store for the demo — replace with your database.
-const db = { subscriptions: new Map() };
-
-let razorpay = null;
-if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
-  try {
-    const Razorpay = require('razorpay');
-    razorpay = new Razorpay({
-      key_id: process.env.RAZORPAY_KEY_ID,
-      key_secret: process.env.RAZORPAY_KEY_SECRET,
-    });
-  } catch (err) {
-    console.warn('razorpay package unavailable — billing runs in demo mode');
-  }
-}
-
-function nextBillingAt(months) {
-  const d = new Date();
-  d.setMonth(d.getMonth() + months);
-  return d.toISOString();
-}
-
-/* ------------------------------------------------------------------ */
-/*  Payment webhook — the heart of Autopay automation.                */
-/*  Registered BEFORE express.json() because signature verification   */
-/*  requires the raw request body.                                    */
-/* ------------------------------------------------------------------ */
-app.post('/api/billing/webhook', express.raw({ type: '*/*' }), (req, res) => {
-  const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
-  if (secret) {
-    const expected = crypto.createHmac('sha256', secret).update(req.body).digest('hex');
-    if (expected !== req.headers['x-razorpay-signature']) {
-      return res.status(400).json({ error: 'invalid signature' });
-    }
-  }
-
-  let event;
-  try { event = JSON.parse(req.body.toString('utf8')); }
-  catch { return res.status(400).json({ error: 'bad payload' }); }
-
-  const sub = event.payload && event.payload.subscription && event.payload.subscription.entity;
-  const userId = sub && sub.notes && sub.notes.userId;
-  if (!userId) return res.json({ ok: true });
-
-  switch (event.event) {
-    // Mandate authorized, or a recurring auto-debit succeeded:
-    // extend the plan for another cycle. This fires automatically on
-    // every renewal — the user never has to pay manually again.
-    case 'subscription.activated':
-    case 'subscription.charged': {
-      const planId = sub.notes.planId;
-      const months = (PLANS[planId] && PLANS[planId].months) || 1;
-      db.subscriptions.set(userId, {
-        id: sub.id, planId, status: 'active', autopay: true,
-        nextBillingAt: nextBillingAt(months),
-      });
-      break;
-    }
-    // Auto-debit failed repeatedly, user cancelled the mandate, or the
-    // subscription ran out: turn Autopay off.
-    case 'subscription.halted':
-    case 'subscription.cancelled':
-    case 'subscription.expired': {
-      const cur = db.subscriptions.get(userId);
-      if (cur) db.subscriptions.set(userId, { ...cur, status: 'cancelled', autopay: false });
-      break;
-    }
-  }
-  res.json({ ok: true });
-});
-
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '4mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 /* ------------------------------------------------------------------ */
-/*  Code generation & deploy                                          */
+/*  Code generation — Groq                                            */
 /* ------------------------------------------------------------------ */
+
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+
+const SYSTEM_PROMPT = [
+  'You are an expert front-end engineer and UI designer.',
+  'Generate a COMPLETE, single-file, production-ready website as ONE HTML document.',
+  'Rules:',
+  '- Return ONLY raw HTML. Start with <!DOCTYPE html> and end with </html>.',
+  '- No markdown, no code fences, no explanations before or after.',
+  '- Inline ALL CSS inside a <style> tag and ALL JS inside a <script> tag — the file must work standalone.',
+  '- Modern, beautiful, responsive design that looks great on mobile and desktop.',
+  '- Use semantic HTML, accessible markup, and tasteful animations.',
+  '- Do NOT reference any external files, frameworks, or CDNs — everything self-contained.',
+].join('\n');
 
 /**
  * POST /api/generate-code
- * Body:    { prompt: string, projectId: string, userId: string }
+ * Body:    { prompt: string, projectId?: string, userId?: string }
  * Returns: { code: string }  — a complete HTML document
  */
 app.post('/api/generate-code', async (req, res) => {
-  const { prompt, projectId, userId } = req.body || {};
+  const { prompt } = req.body || {};
   if (!prompt || !prompt.trim()) {
     return res.status(400).json({ error: 'prompt is required' });
   }
+  if (!process.env.GROQ_API_KEY) {
+    return res.status(501).json({ error: 'GROQ_API_KEY not configured' });
+  }
 
-  // TODO: call your AI provider here and return the generated HTML.
-  // const code = await generateWebsite({ prompt, projectId, userId });
-  // return res.json({ code });
+  try {
+    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        temperature: 0.7,
+        max_tokens: 8000,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: prompt },
+        ],
+      }),
+    });
 
-  return res.status(501).json({ error: 'generate-code not implemented yet' });
+    if (!r.ok) {
+      const detail = await r.text().catch(() => '');
+      console.error('Groq error:', r.status, detail.slice(0, 300));
+      return res.status(502).json({ error: 'generation service error' });
+    }
+
+    const data = await r.json();
+    let code = data?.choices?.[0]?.message?.content || '';
+
+    // Strip accidental markdown fences if the model added them.
+    code = code.replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
+
+    if (!code || !/<html|<!doctype/i.test(code)) {
+      return res.status(502).json({ error: 'generation returned invalid HTML' });
+    }
+    return res.json({ code });
+  } catch (err) {
+    console.error('generate-code failed:', err.message);
+    return res.status(502).json({ error: 'generation service unreachable' });
+  }
 });
+
+/* ------------------------------------------------------------------ */
+/*  Deploy — Cloudflare Workers (serves the generated HTML live)      */
+/* ------------------------------------------------------------------ */
+
+const CF_API = 'https://api.cloudflare.com/client/v4';
+
+async function cfSubdomain(accountId, token) {
+  const r = await fetch(`${CF_API}/accounts/${accountId}/workers/subdomain`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const d = await r.json();
+  return d?.result?.subdomain || null;
+}
 
 /**
  * POST /api/deploy-vercel
- * Body:    { projectId: string, userId: string, code: string }
+ * Body:    { projectId?: string, userId?: string, code: string }
  * Returns: { url: string } — the live deployment URL
  */
 app.post('/api/deploy-vercel', async (req, res) => {
-  const { projectId, userId, code } = req.body || {};
+  const { projectId, code } = req.body || {};
   if (!code) {
     return res.status(400).json({ error: 'code is required' });
   }
 
-  // TODO: push the code to your hosting provider and return the live URL.
-  // const url = await deployProject({ projectId, userId, code });
-  // return res.json({ url });
-
-  return res.status(501).json({ error: 'deploy not implemented yet' });
-});
-
-/* ------------------------------------------------------------------ */
-/*  Billing routes                                                    */
-/* ------------------------------------------------------------------ */
-
-/**
- * POST /api/billing/subscribe
- * Body: { planId: 'pro_monthly' | 'pro_yearly', userId: string }
- *
- * Live mode  → { subscriptionId, checkoutUrl }
- *   The user authorizes the recurring mandate (UPI Autopay / card
- *   e-mandate) on the hosted checkout page; the webhook above flips the
- *   subscription to active and every future cycle is charged
- *   automatically by the gateway.
- * Demo mode  → { subscription } — instantly active.
- */
-app.post('/api/billing/subscribe', async (req, res) => {
-  const { planId, userId } = req.body || {};
-  const plan = PLANS[planId];
-  if (!plan || !userId) {
-    return res.status(400).json({ error: 'valid planId and userId are required' });
+  const token = process.env.CLOUDFLARE_API_TOKEN;
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  if (!token || !accountId) {
+    return res.status(501).json({ error: 'Cloudflare deploy not configured' });
   }
 
-  if (razorpay && plan.razorpayPlanId) {
-    try {
-      const sub = await razorpay.subscriptions.create({
-        plan_id: plan.razorpayPlanId,
-        total_count: planId === 'pro_yearly' ? 5 : 60, // auto-debits covered by the mandate
-        customer_notify: 1,
-        notes: { userId, planId },
-      });
-      db.subscriptions.set(userId, { id: sub.id, planId, status: 'created', autopay: true });
-      return res.json({ subscriptionId: sub.id, checkoutUrl: sub.short_url });
-    } catch (err) {
-      console.error('subscription create failed:', err.message);
-      return res.status(502).json({ error: 'payment gateway error' });
+  // A safe, unique script name (lowercase letters, digits, dashes only).
+  const scriptName = (
+    'site-' + String(projectId || Math.random().toString(36).slice(2, 8))
+  )
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 54);
+
+  // A tiny module Worker that serves the generated HTML on every request.
+  const workerCode =
+    'const html = ' + JSON.stringify(code) + ';\n' +
+    'export default {\n' +
+    '  async fetch() {\n' +
+    '    return new Response(html, { headers: { "content-type": "text/html;charset=UTF-8" } });\n' +
+    '  }\n' +
+    '};\n';
+
+  try {
+    // 1) Upload the Worker script (ES module, multipart form).
+    const form = new FormData();
+    form.append(
+      'metadata',
+      JSON.stringify({ main_module: 'worker.js', compatibility_date: '2024-11-01' })
+    );
+    form.append(
+      'worker.js',
+      new Blob([workerCode], { type: 'application/javascript+module' }),
+      'worker.js'
+    );
+
+    const up = await fetch(
+      `${CF_API}/accounts/${accountId}/workers/scripts/${scriptName}`,
+      { method: 'PUT', headers: { Authorization: `Bearer ${token}` }, body: form }
+    );
+    if (!up.ok) {
+      const detail = await up.text().catch(() => '');
+      console.error('CF upload error:', up.status, detail.slice(0, 300));
+      return res.status(502).json({ error: 'deploy upload failed' });
     }
+
+    // 2) Enable the workers.dev subdomain route for this script.
+    await fetch(
+      `${CF_API}/accounts/${accountId}/workers/scripts/${scriptName}/subdomain`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: true }),
+      }
+    );
+
+    // 3) Resolve the account's workers.dev subdomain to build the public URL.
+    const sub = await cfSubdomain(accountId, token);
+    if (!sub) return res.status(502).json({ error: 'could not resolve workers.dev subdomain' });
+
+    return res.json({ url: `https://${scriptName}.${sub}.workers.dev` });
+  } catch (err) {
+    console.error('deploy failed:', err.message);
+    return res.status(502).json({ error: 'deploy service unreachable' });
   }
-
-  const subscription = {
-    id: 'sub_demo_' + crypto.randomBytes(4).toString('hex'),
-    planId, status: 'active', autopay: true,
-    nextBillingAt: nextBillingAt(plan.months),
-  };
-  db.subscriptions.set(userId, subscription);
-  return res.json({ subscription, demo: true });
-});
-
-/**
- * GET /api/billing/status?userId=…
- * Polled by the front-end while the user completes the hosted checkout.
- */
-app.get('/api/billing/status', (req, res) => {
-  res.json({ subscription: db.subscriptions.get(req.query.userId) || null });
-});
-
-/**
- * POST /api/billing/cancel
- * Body: { userId: string, subscriptionId: string }
- * Cancels the Autopay mandate at the end of the current cycle — the plan
- * stays active until the period the user already paid for runs out.
- */
-app.post('/api/billing/cancel', async (req, res) => {
-  const { userId } = req.body || {};
-  const sub = db.subscriptions.get(userId);
-  if (!sub) return res.status(404).json({ error: 'no active subscription' });
-
-  if (razorpay && !sub.id.startsWith('sub_demo_')) {
-    try {
-      await razorpay.subscriptions.cancel(sub.id, true); // cancel at cycle end
-    } catch (err) {
-      console.error('subscription cancel failed:', err.message);
-      return res.status(502).json({ error: 'payment gateway error' });
-    }
-  }
-
-  const updated = { ...sub, status: 'cancelled', autopay: false };
-  db.subscriptions.set(userId, updated);
-  res.json({ subscription: updated });
 });
 
 app.listen(PORT, () => {
   console.log(`AI Web Studio running at http://localhost:${PORT}`);
-  console.log(`Billing mode: ${razorpay ? 'LIVE (gateway connected)' : 'DEMO (no gateway keys set)'}`);
+  console.log(`  Code generation : ${process.env.GROQ_API_KEY ? 'Groq (live)' : 'demo engine (no GROQ_API_KEY)'}`);
+  console.log(`  Deploy          : ${process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID ? 'Cloudflare (live)' : 'demo URL (no Cloudflare keys)'}`);
 });
