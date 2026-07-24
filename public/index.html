@@ -580,7 +580,7 @@
     projectId: null,
     projectName: null,
     code: '',
-    credits: Number(localStorage.getItem('aws_credits') ?? 10),
+    credits: Number(localStorage.getItem('aws_credits_v2') ?? 100),
     plan: localStorage.getItem('aws_plan') || 'free',
     sub: JSON.parse(localStorage.getItem('aws_sub') || 'null'),
     payments: JSON.parse(localStorage.getItem('aws_payments') || '[]'),
@@ -693,7 +693,7 @@
 
   // ---------- Plan badge (credits / PRO + Autopay status) ----------
   function renderPlanBadge() {
-    localStorage.setItem('aws_credits', String(state.credits));
+    localStorage.setItem('aws_credits_v2', String(state.credits));
     if (state.plan === 'pro') {
       const autopayOn = state.sub?.autopay;
       el.planBadge.innerHTML = `
@@ -1262,7 +1262,7 @@
     } else {
       state.plan = 'free';
       state.sub = null;
-      state.credits = Math.max(state.credits, 10);
+      state.credits = Math.max(state.credits, 100);
       saveBilling();
       toast('Pro period ended — you are back on the Free plan');
     }
