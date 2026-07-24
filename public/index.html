@@ -158,7 +158,10 @@
     </button>
 
     <!-- Right cluster -->
-    <div class="flex items-center gap-2 sm:gap-3">
+    <div class="flex items-center gap-1.5 sm:gap-3">
+      <!-- Account (sign in / avatar) -->
+      <button id="btn-account" class="btn glass flex items-center gap-1.5 rounded-full py-1 pl-1 pr-1 text-xs font-semibold hover:border-white/20 sm:pr-3" title="Account"></button>
+
       <!-- Free credits badge (refills every 15 days) -->
       <button id="plan-badge" class="btn glass flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-semibold hover:border-white/20 sm:gap-2 sm:px-3.5 sm:text-xs" title="Free credits — refill every 15 days"></button>
 
@@ -420,6 +423,49 @@
   </main>
 
   <!-- ============================================================ -->
+  <!-- AUTH MODAL (sign in / sign up)                               -->
+  <!-- ============================================================ -->
+  <div id="auth-modal" class="view-hidden fixed inset-0 z-50 grid place-items-center p-4">
+    <div id="auth-backdrop" class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+    <div class="glass-strong animate-pop relative w-full max-w-sm rounded-2xl p-6">
+      <button id="btn-close-auth" class="btn absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" title="Close">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+
+      <div class="mb-5 flex flex-col items-center text-center">
+        <span class="mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-brand-500 via-violet-600 to-accent-500 shadow-lg shadow-brand-500/30">
+          <svg class="h-6 w-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+        </span>
+        <h3 id="auth-title" class="text-lg font-bold text-white">Welcome back</h3>
+        <p id="auth-subtitle" class="mt-1 text-sm text-slate-400">Sign in to sync your account.</p>
+      </div>
+
+      <!-- Tabs -->
+      <div class="mb-4 flex gap-1 rounded-xl bg-black/25 p-1">
+        <button id="atab-signin" class="btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Sign in</button>
+        <button id="atab-signup" class="btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Sign up</button>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="mb-1 block text-xs font-medium text-slate-400">Email</label>
+          <input id="af-email" type="email" autocomplete="email" placeholder="you@example.com" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-slate-400">Password</label>
+          <input id="af-password" type="password" autocomplete="current-password" placeholder="••••••••" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+        </div>
+        <p id="auth-error" class="view-hidden rounded-lg border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300"></p>
+        <button id="btn-auth-submit" class="btn btn-primary flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white">
+          <span id="auth-submit-label">Sign in</span>
+        </button>
+      </div>
+
+      <p class="mt-4 text-center text-[11px] text-slate-500">You can keep using the app without an account — signing in just saves your identity.</p>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
   <!-- SETTINGS MODAL (AI models)                                   -->
   <!-- ============================================================ -->
   <div id="settings-modal" class="view-hidden fixed inset-0 z-50 grid place-items-center p-4">
@@ -430,12 +476,15 @@
       </button>
 
       <div class="mb-4 flex items-center gap-3">
-        <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-accent-500 text-sm font-bold text-white">V</span>
-        <div>
+        <span id="profile-avatar" class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-accent-500 text-sm font-bold text-white">V</span>
+        <div class="min-w-0">
           <h3 class="text-lg font-bold text-white">Your Profile</h3>
-          <p class="text-xs text-slate-400">No sign-in needed — everything is saved on this device.</p>
+          <p id="profile-sub" class="truncate text-xs text-slate-400">Everything is saved on this device.</p>
         </div>
       </div>
+
+      <!-- Account (sign in / out) -->
+      <div id="account-card" class="mb-4"></div>
 
       <!-- Tabs -->
       <div class="mb-4 flex gap-1 rounded-xl bg-black/25 p-1">
@@ -660,6 +709,7 @@
     prefs: Object.assign({ thorough: true, autoDeploy: false, clarify: true },
       JSON.parse(localStorage.getItem('aws_prefs') || '{}')),
     attachments: [], // files attached to the current prompt (not persisted)
+    auth: JSON.parse(localStorage.getItem('aws_auth') || 'null'), // { token, user } | null
   };
 
   // ---------- DOM shortcuts ----------
@@ -726,6 +776,22 @@
     fileInput:        $('#file-input'),
     btnAttach:        $('#btn-attach'),
     attachRow:        $('#attach-row'),
+    // auth
+    btnAccount:       $('#btn-account'),
+    authModal:        $('#auth-modal'),
+    authBackdrop:     $('#auth-backdrop'),
+    afEmail:          $('#af-email'),
+    afPassword:       $('#af-password'),
+    authError:        $('#auth-error'),
+    authTitle:        $('#auth-title'),
+    authSubtitle:     $('#auth-subtitle'),
+    authSubmitLabel:  $('#auth-submit-label'),
+    btnAuthSubmit:    $('#btn-auth-submit'),
+    atabSignin:       $('#atab-signin'),
+    atabSignup:       $('#atab-signup'),
+    accountCard:      $('#account-card'),
+    profileAvatar:    $('#profile-avatar'),
+    profileSub:       $('#profile-sub'),
     // modal
     modal:         $('#deploy-modal'),
     modalBackdrop: $('#deploy-backdrop'),
@@ -1549,6 +1615,7 @@
 
   function openSettings(tab) {
     hideModelForm();
+    renderAccountCard();
     renderModels();
     renderSecrets();
     el.pfThorough.checked = !!state.prefs.thorough;
@@ -1561,6 +1628,147 @@
   function closeSettings() {
     el.settingsModal.classList.add('view-hidden');
     document.body.style.overflow = '';
+  }
+
+  /* ============================================================
+   *  AUTH  (sign in / sign up — server-verified tokens)
+   * ============================================================ */
+  const API_AUTH = { signup: '/api/auth/signup', login: '/api/auth/login', me: '/api/auth/me' };
+  let authMode = 'signin';
+
+  function saveAuth() {
+    if (state.auth) localStorage.setItem('aws_auth', JSON.stringify(state.auth));
+    else localStorage.removeItem('aws_auth');
+  }
+  function initials(email) { return (email || '?').trim().charAt(0).toUpperCase(); }
+
+  // Header button: "Sign in" when logged out, avatar initial when logged in.
+  function renderAccountButton() {
+    const u = state.auth?.user;
+    if (u) {
+      el.btnAccount.innerHTML = `
+        <span class="grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-accent-500 text-[12px] font-bold text-white">${initials(u.email)}</span>
+        <span class="hidden max-w-[120px] truncate sm:inline">${u.email}</span>`;
+      el.btnAccount.title = u.email;
+    } else {
+      el.btnAccount.innerHTML = `
+        <span class="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-slate-300">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </span>
+        <span class="hidden pr-1 text-slate-200 sm:inline">Sign in</span>`;
+      el.btnAccount.title = 'Sign in';
+    }
+    // Reflect in the profile header too.
+    el.profileAvatar.textContent = u ? initials(u.email) : 'V';
+    el.profileSub.textContent = u ? u.email : 'Everything is saved on this device.';
+  }
+
+  // Account card inside the profile modal.
+  function renderAccountCard() {
+    const u = state.auth?.user;
+    if (u) {
+      el.accountCard.innerHTML = `
+        <div class="glass flex items-center gap-3 rounded-xl px-3.5 py-3">
+          <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-accent-500 text-sm font-bold text-white">${initials(u.email)}</span>
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-sm font-semibold text-white">${u.email}</div>
+            <div class="text-[11px] text-emerald-300">● Signed in</div>
+          </div>
+          <button id="btn-logout" class="btn glass shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-200 hover:text-white">Log out</button>
+        </div>`;
+      el.accountCard.querySelector('#btn-logout').addEventListener('click', doLogout);
+    } else {
+      el.accountCard.innerHTML = `
+        <div class="glass flex items-center gap-3 rounded-xl px-3.5 py-3">
+          <span class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/10 text-slate-300">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </span>
+          <div class="min-w-0 flex-1"><div class="text-sm font-semibold text-white">Not signed in</div><div class="text-[11px] text-slate-500">Sign in to save your identity</div></div>
+          <div class="flex shrink-0 gap-2">
+            <button id="btn-goto-signin" class="btn glass rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-200 hover:text-white">Sign in</button>
+            <button id="btn-goto-signup" class="btn btn-primary rounded-lg px-3 py-1.5 text-xs font-semibold text-white">Sign up</button>
+          </div>
+        </div>`;
+      el.accountCard.querySelector('#btn-goto-signin').addEventListener('click', () => { closeSettings(); openAuth('signin'); });
+      el.accountCard.querySelector('#btn-goto-signup').addEventListener('click', () => { closeSettings(); openAuth('signup'); });
+    }
+  }
+
+  function setAuthMode(mode) {
+    authMode = mode;
+    const signin = mode === 'signin';
+    el.authTitle.textContent = signin ? 'Welcome back' : 'Create your account';
+    el.authSubtitle.textContent = signin ? 'Sign in to sync your account.' : 'It takes a few seconds — email and password.';
+    el.authSubmitLabel.textContent = signin ? 'Sign in' : 'Create account';
+    el.afPassword.setAttribute('autocomplete', signin ? 'current-password' : 'new-password');
+    [[el.atabSignin, signin], [el.atabSignup, !signin]].forEach(([b, on]) => {
+      b.classList.toggle('bg-white/10', on);
+      b.classList.toggle('text-white', on);
+      b.classList.toggle('text-slate-400', !on);
+    });
+    el.authError.classList.add('view-hidden');
+  }
+
+  function openAuth(mode) {
+    setAuthMode(mode || 'signin');
+    el.authError.classList.add('view-hidden');
+    el.authModal.classList.remove('view-hidden');
+    document.body.style.overflow = 'hidden';
+    el.afEmail.focus();
+  }
+  function closeAuth() {
+    el.authModal.classList.add('view-hidden');
+    document.body.style.overflow = '';
+  }
+  function authErr(msg) {
+    el.authError.textContent = msg;
+    el.authError.classList.remove('view-hidden');
+  }
+
+  async function submitAuth() {
+    const email = el.afEmail.value.trim();
+    const password = el.afPassword.value;
+    if (!email || !password) { authErr('Enter your email and password'); return; }
+    el.btnAuthSubmit.disabled = true;
+    el.authSubmitLabel.textContent = authMode === 'signin' ? 'Signing in…' : 'Creating…';
+    try {
+      const res = await fetch(authMode === 'signin' ? API_AUTH.login : API_AUTH.signup, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      state.auth = { token: data.token, user: data.user };
+      saveAuth();
+      renderAccountButton();
+      el.afPassword.value = '';
+      closeAuth();
+      toast(`Welcome${authMode === 'signup' ? '' : ' back'}, ${data.user.email} 👋`, 'success');
+    } catch (err) {
+      authErr(err.message);
+    } finally {
+      el.btnAuthSubmit.disabled = false;
+      el.authSubmitLabel.textContent = authMode === 'signin' ? 'Sign in' : 'Create account';
+    }
+  }
+
+  function doLogout() {
+    state.auth = null;
+    saveAuth();
+    renderAccountButton();
+    renderAccountCard();
+    toast('Signed out');
+  }
+
+  // Validate a stored token on load; silently sign out if it's no longer valid.
+  async function refreshMe() {
+    if (!state.auth?.token) return;
+    try {
+      const res = await fetch(API_AUTH.me, { headers: { Authorization: `Bearer ${state.auth.token}` } });
+      if (res.status === 401) { state.auth = null; saveAuth(); renderAccountButton(); return; }
+      if (res.ok) { const d = await res.json(); state.auth.user = d.user; saveAuth(); renderAccountButton(); }
+    } catch { /* offline — keep the cached identity */ }
   }
 
   /* ============================================================
@@ -2393,6 +2601,16 @@
   $('#btn-close-projects').addEventListener('click', closeProjects);
   $('#btn-new-from-projects').addEventListener('click', () => { closeProjects(); newProject(); });
 
+  // Account / auth
+  el.btnAccount.addEventListener('click', () => { if (state.auth?.user) openSettings('models'); else openAuth('signin'); });
+  el.authBackdrop.addEventListener('click', closeAuth);
+  $('#btn-close-auth').addEventListener('click', closeAuth);
+  el.atabSignin.addEventListener('click', () => setAuthMode('signin'));
+  el.atabSignup.addEventListener('click', () => setAuthMode('signup'));
+  el.btnAuthSubmit.addEventListener('click', submitAuth);
+  el.afPassword.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitAuth(); });
+  el.afEmail.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.afPassword.focus(); });
+
   // Settings / profile modal
   el.btnSettings.addEventListener('click', () => openSettings('models'));
   el.settingsBackdrop.addEventListener('click', closeSettings);
@@ -2424,7 +2642,7 @@
     el.btnCopyUrl.textContent = 'Copied!';
     setTimeout(() => { el.btnCopyUrl.textContent = 'Copy'; }, 1500);
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeProjects(); closeSettings(); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeProjects(); closeSettings(); closeAuth(); } });
 
   // Credits badge — tap to see how many are left / when they refill
   el.planBadge.addEventListener('click', creditsInfo);
@@ -2444,6 +2662,8 @@
   // ---------- Init ----------
   renderChips();
   initCredits();
+  renderAccountButton();
+  refreshMe();
   updateDeployButton();
   setTab('preview');
   el.overlay.classList.add('view-hidden');

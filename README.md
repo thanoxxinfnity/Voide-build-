@@ -23,17 +23,30 @@ A white-label, single-page **AI Website Builder** — dark theme, glassmorphism,
 - **Any model, any company** — add unlimited models in **Settings → Models**: OpenAI, Anthropic (Claude), Google (Gemini), OpenRouter or any OpenAI-compatible endpoint. Each has the right fields; the server proxies the right API shape.
 - **Secrets / env vars** — a private vault (Settings → Secrets). Values never appear in chat; the AI only sees secret **names** to wire placeholders. Paste an API key into chat and a **"Add to secrets"** prompt appears so it's stored safely instead.
 - **File upload** — attach images, 3D models (`.glb/.gltf`), video or assets to a prompt (great for 3D/animated sites; CDN libraries like three.js/GSAP are allowed for those builds).
-- **No sign-in profile** — everything (models, secrets, preferences, projects) is saved on-device. Preferences include Thorough mode, Auto-deploy and clarifying questions.
+- **Sign in / Sign up** — real email + password accounts (server-side, scrypt-hashed, signed session tokens). Optional: the app stays fully usable signed-out; signing in just saves your identity. Models, secrets, preferences and projects are still stored on-device.
 - **Fully mobile friendly** — the header collapses to compact icon buttons, and below `768px` the workspace becomes a Chat / Output switcher.
 
 ## API contract
 
-The front-end calls these two endpoints and degrades gracefully to a built-in demo engine when they're absent, so the UI is fully usable before the backend is wired up:
+The front-end calls these endpoints and degrades gracefully to a built-in demo engine when they're absent, so the UI is fully usable before the backend is wired up:
 
 ```
-POST /api/generate-code   { prompt, projectId, userId }  →  { code }
-POST /api/deploy-vercel   { projectId, userId, code }    →  { url }
+POST /api/generate-code   { prompt, projectId, userId, provider? }  →  { code }
+POST /api/deploy-vercel   { projectId, userId, code }               →  { url }
+POST /api/auth/signup     { email, password }                       →  { token, user }
+POST /api/auth/login      { email, password }                       →  { token, user }
+GET  /api/auth/me         (Authorization: Bearer <token>)           →  { user }
 ```
+
+## Accounts (sign in / sign up)
+
+Email + password auth is built in — no third-party service. Passwords are hashed with `scrypt` (Node's `crypto`), and sessions are stateless **HMAC-signed tokens** (30-day expiry) verified on each request. Users persist to `data/users.json` (git-ignored); if the disk isn't writable the store falls back to in-memory for the session. Set `AUTH_SECRET` to keep tokens valid across restarts:
+
+```
+AUTH_SECRET   optional — signing secret for session tokens (random per boot if unset)
+```
+
+The whole app works signed-out; accounts just save the user's identity (shown in the header and profile).
 
 ## Code generation — Groq (default) + custom models
 

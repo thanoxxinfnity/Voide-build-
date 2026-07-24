@@ -22,12 +22,105 @@
  */
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '4mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+/* ------------------------------------------------------------------ */
+/*  Authentication — email + password, hashed, signed tokens          */
+/*  No third-party auth deps; users persist to data/users.json.       */
+/* ------------------------------------------------------------------ */
+const DATA_DIR = path.join(__dirname, 'data');
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+let store = { secret: null, users: {} };
+let storeWritable = true;
+
+function saveStore() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(USERS_FILE, JSON.stringify(store));
+  } catch (err) {
+    storeWritable = false; // fall back to in-memory for this session
+  }
+}
+function loadStore() {
+  try { store = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')); } catch { /* fresh store */ }
+  if (!store.users) store.users = {};
+  if (!store.secret) { store.secret = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex'); saveStore(); }
+}
+loadStore();
+
+function hashPassword(password, salt) {
+  salt = salt || crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return { salt, hash };
+}
+function verifyPassword(password, salt, hash) {
+  const h = crypto.scryptSync(password, salt, 64).toString('hex');
+  const a = Buffer.from(h, 'hex'), b = Buffer.from(hash, 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+function b64url(input) {
+  return Buffer.from(input).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function signToken(payload) {
+  const body = b64url(JSON.stringify(payload));
+  const sig = b64url(crypto.createHmac('sha256', store.secret).update(body).digest());
+  return `${body}.${sig}`;
+}
+function verifyToken(token) {
+  if (!token || token.indexOf('.') < 0) return null;
+  const [body, sig] = token.split('.');
+  const expected = b64url(crypto.createHmac('sha256', store.secret).update(body).digest());
+  if (sig !== expected) return null;
+  let p;
+  try { p = JSON.parse(Buffer.from(body.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString()); }
+  catch { return null; }
+  if (p.exp && Date.now() > p.exp) return null;
+  return p;
+}
+function bearer(req) {
+  return String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+}
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const TOKEN_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+app.post('/api/auth/signup', (req, res) => {
+  const email = String((req.body || {}).email || '').trim().toLowerCase();
+  const password = String((req.body || {}).password || '');
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Please enter a valid email' });
+  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  if (store.users[email]) return res.status(409).json({ error: 'Account already exists — please sign in' });
+
+  const { salt, hash } = hashPassword(password);
+  const user = { id: 'user_' + crypto.randomBytes(6).toString('hex'), email, salt, hash, createdAt: Date.now() };
+  store.users[email] = user;
+  saveStore();
+  const token = signToken({ uid: user.id, email, exp: Date.now() + TOKEN_TTL });
+  res.json({ token, user: { id: user.id, email } });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const email = String((req.body || {}).email || '').trim().toLowerCase();
+  const password = String((req.body || {}).password || '');
+  const user = store.users[email];
+  if (!user || !verifyPassword(password, user.salt, user.hash)) {
+    return res.status(401).json({ error: 'Wrong email or password' });
+  }
+  const token = signToken({ uid: user.id, email, exp: Date.now() + TOKEN_TTL });
+  res.json({ token, user: { id: user.id, email } });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const p = verifyToken(bearer(req));
+  if (!p) return res.status(401).json({ error: 'not authenticated' });
+  res.json({ user: { id: p.uid, email: p.email } });
+});
 
 /* ------------------------------------------------------------------ */
 /*  Code generation — OpenAI-compatible chat completions              */
@@ -293,4 +386,5 @@ app.listen(PORT, () => {
   console.log(`  Code generation : ${process.env.GROQ_API_KEY ? 'Groq (live)' : 'demo engine (no GROQ_API_KEY)'}`);
   console.log(`  Deploy          : ${process.env.VERCEL_TOKEN ? 'Vercel (live)' : 'demo URL (no VERCEL_TOKEN)'}`);
   console.log(`  GitHub mirror   : ${process.env.GITHUB_TOKEN && process.env.GITHUB_OWNER ? 'on' : 'off'}`);
+  console.log(`  Auth            : ${storeWritable ? 'file store (data/users.json)' : 'in-memory (disk not writable)'}`);
 });
