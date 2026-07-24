@@ -30,9 +30,9 @@ POST /api/generate-code   { prompt, projectId, userId }  →  { code }
 POST /api/deploy-vercel   { projectId, userId, code }    →  { url }
 ```
 
-## Code generation — Groq
+## Code generation — Groq (default) + custom models
 
-`POST /api/generate-code` sends the prompt to Groq's chat-completions API and returns a complete, self-contained HTML document. Configure:
+`POST /api/generate-code` returns a complete, self-contained HTML document. It works with **any OpenAI-compatible chat-completions API**. The server default is Groq:
 
 ```
 GROQ_API_KEY    your Groq API key
@@ -40,6 +40,18 @@ GROQ_MODEL      model id (optional, default: llama-3.3-70b-versatile)
 ```
 
 Without `GROQ_API_KEY` the route returns `501` and the front-end falls back to its built-in themed demo generator, so the whole UI still works.
+
+### Custom models (Settings → Add Model)
+
+Users can add their own models from the **Settings** panel — no code changes, no env vars. Each model needs a **name**, an **API base URL** (e.g. `https://api.openai.com/v1`), a **model id** (e.g. `gpt-4o-mini`) and an **API key**. The active model is used for both generating and editing sites.
+
+The request body accepts an optional `provider`:
+
+```
+POST /api/generate-code { prompt, provider: { endpoint, apiKey, model } }
+```
+
+When present, the server proxies the call to that provider (so there are no browser CORS issues and the key travels only to your own backend). Works with OpenAI, Groq, OpenRouter, Together, Mistral, local LLMs — anything speaking the OpenAI schema. Model settings are stored in the browser's `localStorage`.
 
 ## Live deploy — Vercel
 

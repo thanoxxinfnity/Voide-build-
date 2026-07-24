@@ -138,6 +138,12 @@
       <!-- Free credits badge (refills every 15 days) -->
       <button id="plan-badge" class="btn glass flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-semibold hover:border-white/20 sm:gap-2 sm:px-3.5 sm:text-xs" title="Free credits — refill every 15 days"></button>
 
+      <!-- Settings (AI models) -->
+      <button id="btn-settings" class="btn glass flex items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="Settings — AI models">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span class="hidden lg:inline">Settings</span>
+      </button>
+
       <!-- Projects (history + new project) -->
       <button id="btn-projects" class="btn glass flex items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="Your projects">
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 8 4.5v9L12 20l-8-4.5v-9L12 2z"/><path d="m12 2 8 4.5-8 4.5-8-4.5L12 2z"/><path d="M12 11v9"/></svg>
@@ -385,6 +391,63 @@
   </main>
 
   <!-- ============================================================ -->
+  <!-- SETTINGS MODAL (AI models)                                   -->
+  <!-- ============================================================ -->
+  <div id="settings-modal" class="view-hidden fixed inset-0 z-50 grid place-items-center p-4">
+    <div id="settings-backdrop" class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+    <div class="glass-strong animate-pop nice-scroll relative max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-2xl p-5 sm:p-6">
+      <button id="btn-close-settings" class="btn absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" title="Close">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+
+      <div class="mb-4">
+        <h3 class="text-lg font-bold text-white">AI Models</h3>
+        <p class="mt-1 text-sm text-slate-400">Add any OpenAI-compatible model and pick which one builds your sites.</p>
+      </div>
+
+      <!-- Active model list (server default is always the first option) -->
+      <div id="models-list" class="space-y-2"></div>
+
+      <!-- Add model button -->
+      <button id="btn-add-model" class="btn glass mt-4 flex w-full items-center justify-center gap-2 rounded-xl border-dashed px-4 py-2.5 text-sm font-semibold text-slate-200 hover:border-white/25 hover:bg-white/10">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        Add Model
+      </button>
+
+      <!-- Add / edit model form (hidden until "Add Model") -->
+      <div id="model-form" class="view-hidden mt-4 space-y-3 rounded-2xl border border-white/10 bg-black/25 p-4">
+        <div>
+          <label class="mb-1 block text-xs font-medium text-slate-400">Name</label>
+          <input id="mf-label" type="text" placeholder="e.g. My OpenRouter GPT-4o" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-slate-400">API Base URL</label>
+          <input id="mf-endpoint" type="url" placeholder="https://api.openai.com/v1" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+          <p class="mt-1 text-[11px] text-slate-600">Base URL (…/v1) or full …/chat/completions endpoint.</p>
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-slate-400">Model ID</label>
+          <input id="mf-model" type="text" placeholder="gpt-4o-mini" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-slate-400">API Key</label>
+          <input id="mf-key" type="password" placeholder="sk-…" autocomplete="off" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+          <p class="mt-1 text-[11px] text-slate-600">Stored only in this browser; sent to your server just to call the model.</p>
+        </div>
+        <div class="flex gap-2 pt-1">
+          <button id="btn-save-model" class="btn btn-primary flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white">Save Model</button>
+          <button id="btn-cancel-model" class="btn glass rounded-xl px-4 py-2.5 text-sm font-medium text-slate-200 hover:text-white">Cancel</button>
+        </div>
+      </div>
+
+      <div class="mt-4 flex items-start gap-2 rounded-xl border border-white/10 bg-white/5 p-3 text-[11px] leading-relaxed text-slate-400">
+        <svg class="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        Works with OpenAI, Groq, OpenRouter, Together, Mistral and any OpenAI-compatible API. The selected model is used for both generating and editing sites.
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
   <!-- PROJECTS MODAL (history)                                     -->
   <!-- ============================================================ -->
   <div id="projects-modal" class="view-hidden fixed inset-0 z-50 grid place-items-center p-4">
@@ -508,6 +571,8 @@
     deployedUrl: null,
     activeTab: 'preview',
     projects: JSON.parse(localStorage.getItem('aws_projects') || '[]'),
+    models: JSON.parse(localStorage.getItem('aws_models') || '[]'),
+    activeModelId: localStorage.getItem('aws_active_model') || null, // null = server default
   };
 
   // ---------- DOM shortcuts ----------
@@ -551,6 +616,16 @@
     projectsModal:    $('#projects-modal'),
     projectsBackdrop: $('#projects-backdrop'),
     projectsList:     $('#projects-list'),
+    // settings modal (AI models)
+    btnSettings:      $('#btn-settings'),
+    settingsModal:    $('#settings-modal'),
+    settingsBackdrop: $('#settings-backdrop'),
+    modelsList:       $('#models-list'),
+    modelForm:        $('#model-form'),
+    mfLabel:          $('#mf-label'),
+    mfEndpoint:       $('#mf-endpoint'),
+    mfModel:          $('#mf-model'),
+    mfKey:            $('#mf-key'),
     // modal
     modal:         $('#deploy-modal'),
     modalBackdrop: $('#deploy-backdrop'),
@@ -826,20 +901,31 @@
 
   // ---------- Backend calls (with graceful mock fallback) ----------
   async function apiGenerateCode(prompt) {
+    const model = activeModel();
     const payload = { prompt, projectId: state.projectId, userId: state.userId };
+    // Send the user-selected custom model (server proxies the call).
+    if (model) {
+      payload.provider = { endpoint: model.endpoint, apiKey: model.apiKey, model: model.model };
+    }
     try {
       const res = await fetch(API.generate, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error(`Generation API responded ${res.status}`);
+      if (!res.ok) {
+        let msg = `Generation API responded ${res.status}`;
+        try { const e = await res.json(); if (e.error) msg = e.error; } catch {}
+        throw new Error(msg);
+      }
       const data = await res.json();
       const code = data.code || data.html || data.result;
       if (!code) throw new Error('Generation API returned no code');
       return { code, source: 'api' };
     } catch (err) {
       console.warn('[AI Web Studio] Falling back to local engine:', err.message);
+      // If the user picked a custom model, tell them why it didn't run.
+      if (model) toast(`“${model.label}” failed: ${err.message}`.slice(0, 120), 'error');
       await new Promise((r) => setTimeout(r, 600));
       return { code: mockGenerate(prompt), source: 'mock' };
     }
@@ -1184,6 +1270,149 @@
   }
   function closeProjects() {
     el.projectsModal.classList.add('view-hidden');
+    document.body.style.overflow = '';
+  }
+
+  /* ============================================================
+   *  SETTINGS — custom AI models
+   *  Users add any OpenAI-compatible model (endpoint + key + id).
+   *  The active model is sent with each generate/edit request and
+   *  the server proxies the call (no CORS issues, keys stay on
+   *  your own backend). Empty selection → server default (Groq).
+   * ============================================================ */
+  let editingModelId = null;
+
+  function persistModels() {
+    localStorage.setItem('aws_models', JSON.stringify(state.models.slice(0, 20)));
+    if (state.activeModelId) localStorage.setItem('aws_active_model', state.activeModelId);
+    else localStorage.removeItem('aws_active_model');
+  }
+
+  // Returns the provider config for the active custom model, or null
+  // when the server default should be used.
+  function activeModel() {
+    if (!state.activeModelId) return null;
+    return state.models.find((m) => m.id === state.activeModelId) || null;
+  }
+
+  function selectModel(id) {
+    state.activeModelId = id; // null = server default
+    persistModels();
+    renderModels();
+    const m = activeModel();
+    toast(m ? `Using “${m.label}”` : 'Using server default model', 'success');
+  }
+
+  function deleteModel(id) {
+    state.models = state.models.filter((m) => m.id !== id);
+    if (state.activeModelId === id) state.activeModelId = null;
+    persistModels();
+    renderModels();
+    toast('Model removed');
+  }
+
+  function showModelForm(model) {
+    editingModelId = model ? model.id : null;
+    el.mfLabel.value    = model ? model.label : '';
+    el.mfEndpoint.value = model ? model.endpoint : '';
+    el.mfModel.value    = model ? model.model : '';
+    el.mfKey.value      = model ? model.apiKey : '';
+    el.modelForm.classList.remove('view-hidden');
+    el.mfLabel.focus();
+  }
+  function hideModelForm() {
+    el.modelForm.classList.add('view-hidden');
+    editingModelId = null;
+  }
+
+  function saveModel() {
+    const label = el.mfLabel.value.trim();
+    const endpoint = el.mfEndpoint.value.trim();
+    const model = el.mfModel.value.trim();
+    const apiKey = el.mfKey.value.trim();
+    if (!label || !endpoint || !model) {
+      toast('Name, API base URL and Model ID are required', 'error');
+      return;
+    }
+    if (editingModelId) {
+      const m = state.models.find((x) => x.id === editingModelId);
+      if (m) Object.assign(m, { label, endpoint, model, apiKey });
+    } else {
+      const id = 'mdl_' + Math.random().toString(36).slice(2, 10);
+      state.models.unshift({ id, label, endpoint, model, apiKey });
+      state.activeModelId = id; // auto-select a freshly added model
+    }
+    persistModels();
+    hideModelForm();
+    renderModels();
+    toast('Model saved — now active ⚡', 'success');
+  }
+
+  function modelRow({ id, label, active, sub, custom }) {
+    const row = document.createElement('div');
+    row.className = `flex items-center gap-3 rounded-xl border px-3.5 py-3 ${active ? 'border-brand-400/50 bg-brand-500/10' : 'border-white/10 bg-black/20'}`;
+    row.innerHTML = `
+      <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg ${active ? 'bg-brand-500/25 text-brand-200' : 'bg-white/5 text-slate-400'}">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 1 2 2v1a7 7 0 0 1 4 6.3V17a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5.7A7 7 0 0 1 10 5V4a2 2 0 0 1 2-2z"/><path d="M9 20v2M15 20v2"/></svg>
+      </span>
+      <button class="mdl-pick min-w-0 flex-1 text-left">
+        <div class="flex items-center gap-2">
+          <span class="truncate text-sm font-semibold text-white"></span>
+          ${active ? '<span class="rounded-full bg-brand-500/25 px-2 py-0.5 text-[10px] font-bold text-brand-200">ACTIVE</span>' : ''}
+        </div>
+        <div class="mt-0.5 truncate text-[11px] text-slate-500">${sub}</div>
+      </button>
+      ${custom ? `
+        <button class="mdl-edit btn shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-white/10 hover:text-white" title="Edit">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        </button>
+        <button class="mdl-del btn shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-rose-500/15 hover:text-rose-300" title="Remove">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>` : ''}`;
+    row.querySelector('.mdl-pick .truncate').textContent = label;
+    return row;
+  }
+
+  function renderModels() {
+    el.modelsList.innerHTML = '';
+
+    // Server default option (always present).
+    const def = modelRow({
+      id: null,
+      label: 'Server default',
+      active: !state.activeModelId,
+      sub: 'Built-in model on your server (Groq)',
+      custom: false,
+    });
+    def.querySelector('.mdl-pick').addEventListener('click', () => selectModel(null));
+    el.modelsList.appendChild(def);
+
+    // User-added models.
+    state.models.forEach((m) => {
+      let host = m.endpoint;
+      try { host = new URL(m.endpoint).host; } catch {}
+      const row = modelRow({
+        id: m.id,
+        label: m.label,
+        active: state.activeModelId === m.id,
+        sub: `${m.model} · ${host}`,
+        custom: true,
+      });
+      row.querySelector('.mdl-pick').addEventListener('click', () => selectModel(m.id));
+      row.querySelector('.mdl-edit').addEventListener('click', () => showModelForm(m));
+      row.querySelector('.mdl-del').addEventListener('click', () => deleteModel(m.id));
+      el.modelsList.appendChild(row);
+    });
+  }
+
+  function openSettings() {
+    hideModelForm();
+    renderModels();
+    el.settingsModal.classList.remove('view-hidden');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeSettings() {
+    el.settingsModal.classList.add('view-hidden');
     document.body.style.overflow = '';
   }
 
@@ -1616,6 +1845,14 @@
   $('#btn-close-projects').addEventListener('click', closeProjects);
   $('#btn-new-from-projects').addEventListener('click', () => { closeProjects(); newProject(); });
 
+  // Settings modal (AI models)
+  el.btnSettings.addEventListener('click', openSettings);
+  el.settingsBackdrop.addEventListener('click', closeSettings);
+  $('#btn-close-settings').addEventListener('click', closeSettings);
+  $('#btn-add-model').addEventListener('click', () => showModelForm(null));
+  $('#btn-save-model').addEventListener('click', saveModel);
+  $('#btn-cancel-model').addEventListener('click', hideModelForm);
+
   // Modal
   el.btnCloseModal.addEventListener('click', closeModal);
   el.btnDoneModal.addEventListener('click', closeModal);
@@ -1628,7 +1865,7 @@
     el.btnCopyUrl.textContent = 'Copied!';
     setTimeout(() => { el.btnCopyUrl.textContent = 'Copy'; }, 1500);
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeProjects(); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeProjects(); closeSettings(); } });
 
   // Credits badge — tap to see how many are left / when they refill
   el.planBadge.addEventListener('click', creditsInfo);

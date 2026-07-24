@@ -30,7 +30,12 @@ app.use(express.json({ limit: '4mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 /* ------------------------------------------------------------------ */
-/*  Code generation — Groq                                            */
+/*  Code generation — OpenAI-compatible chat completions              */
+/*                                                                    */
+/*  Works with any OpenAI-style provider (Groq, OpenAI, OpenRouter,   */
+/*  Together, Mistral, local LLMs, …). The server proxies the request */
+/*  so custom models added in the UI Settings work without CORS       */
+/*  issues and keys never touch third-party browser code.             */
 /* ------------------------------------------------------------------ */
 
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
@@ -47,58 +52,78 @@ const SYSTEM_PROMPT = [
   '- Do NOT reference any external files, frameworks, or CDNs — everything self-contained.',
 ].join('\n');
 
+// Accept either a base URL (…/v1) or a full …/chat/completions endpoint.
+function normalizeEndpoint(ep) {
+  const e = String(ep || '').trim().replace(/\/+$/, '');
+  if (!e) return '';
+  return /\/chat\/completions$/.test(e) ? e : e + '/chat/completions';
+}
+
+// Call any OpenAI-compatible chat-completions API and return the message text.
+async function chatComplete({ endpoint, apiKey, model }, messages) {
+  const url = normalizeEndpoint(endpoint);
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    },
+    body: JSON.stringify({ model, temperature: 0.7, max_tokens: 8000, messages }),
+  });
+  if (!r.ok) {
+    const detail = await r.text().catch(() => '');
+    const err = new Error(`provider responded ${r.status}`);
+    err.status = r.status;
+    err.detail = detail.slice(0, 300);
+    throw err;
+  }
+  const data = await r.json();
+  return data?.choices?.[0]?.message?.content || '';
+}
+
 /**
  * POST /api/generate-code
- * Body:    { prompt: string, projectId?: string, userId?: string }
+ * Body:    { prompt, projectId?, userId?, provider? }
+ *   provider (optional) — a user-added model from Settings:
+ *     { endpoint: string, apiKey: string, model: string }
+ *   When absent, the server's default Groq config is used.
  * Returns: { code: string }  — a complete HTML document
  */
 app.post('/api/generate-code', async (req, res) => {
-  const { prompt } = req.body || {};
+  const { prompt, provider } = req.body || {};
   if (!prompt || !prompt.trim()) {
     return res.status(400).json({ error: 'prompt is required' });
   }
-  if (!process.env.GROQ_API_KEY) {
-    return res.status(501).json({ error: 'GROQ_API_KEY not configured' });
+
+  // Pick the provider: a user-supplied custom model wins, else server Groq.
+  let cfg;
+  if (provider && provider.endpoint && provider.model) {
+    cfg = { endpoint: provider.endpoint, apiKey: provider.apiKey, model: provider.model };
+  } else if (process.env.GROQ_API_KEY) {
+    cfg = { endpoint: 'https://api.groq.com/openai/v1', apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL };
+  } else {
+    return res.status(501).json({ error: 'no model configured — add one in Settings or set GROQ_API_KEY' });
   }
 
+  const messages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'user', content: prompt },
+  ];
+
+  let raw;
   try {
-    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        temperature: 0.7,
-        max_tokens: 8000,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: prompt },
-        ],
-      }),
-    });
-
-    if (!r.ok) {
-      const detail = await r.text().catch(() => '');
-      console.error('Groq error:', r.status, detail.slice(0, 300));
-      return res.status(502).json({ error: 'generation service error' });
-    }
-
-    const data = await r.json();
-    let code = data?.choices?.[0]?.message?.content || '';
-
-    // Strip accidental markdown fences if the model added them.
-    code = code.replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
-
-    if (!code || !/<html|<!doctype/i.test(code)) {
-      return res.status(502).json({ error: 'generation returned invalid HTML' });
-    }
-    return res.json({ code });
+    raw = await chatComplete(cfg, messages);
   } catch (err) {
-    console.error('generate-code failed:', err.message);
-    return res.status(502).json({ error: 'generation service unreachable' });
+    console.error('generation error:', err.message, err.detail || '');
+    return res.status(502).json({ error: err.detail ? `${err.message}: ${err.detail}` : err.message });
   }
+
+  // Strip accidental markdown fences if the model added them.
+  const code = String(raw || '').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  if (!code || !/<html|<!doctype/i.test(code)) {
+    return res.status(502).json({ error: 'generation returned invalid HTML' });
+  }
+  return res.json({ code });
 });
 
 /* ------------------------------------------------------------------ */
