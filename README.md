@@ -36,6 +36,8 @@ POST /api/deploy-vercel   { projectId, userId, code }               →  { url }
 POST /api/auth/signup     { email, password }                       →  { token, user }
 POST /api/auth/login      { email, password }                       →  { token, user }
 GET  /api/auth/me         (Authorization: Bearer <token>)           →  { user }
+GET  /api/auth/config      →  { firebase: <public web config> | null }
+POST /api/auth/google     { idToken }                               →  { token, user }
 ```
 
 ## Accounts (sign in / sign up)
@@ -47,6 +49,20 @@ AUTH_SECRET   optional — signing secret for session tokens (random per boot if
 ```
 
 The whole app works signed-out; accounts just save the user's identity (shown in the header and profile).
+
+### Google sign-in (Firebase)
+
+A **"Continue with Google"** button appears when Firebase is configured. The browser signs in with the Firebase Web SDK (loaded lazily) and sends its **ID token**; the server verifies it against Google's public RS256 certificates and the project id — so **no Admin SDK and no service-account private key are needed** (never put that JSON in the repo — if it's ever shared, rotate it). Only public config is used:
+
+```
+FIREBASE_PROJECT_ID          required — enables Google sign-in + token verification
+FIREBASE_API_KEY             required — public web api key for the browser
+FIREBASE_AUTH_DOMAIN         optional — defaults to <projectId>.firebaseapp.com
+FIREBASE_APP_ID              optional
+FIREBASE_MESSAGING_SENDER_ID optional
+```
+
+Get these from Firebase Console → Project settings → **your Web app's config**. Enable Google as a sign-in provider and add your domain (localhost is allowed by default) under Authentication → Settings → Authorized domains.
 
 ## Code generation — Groq (default) + custom models
 

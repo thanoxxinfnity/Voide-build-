@@ -123,6 +123,98 @@ app.get('/api/auth/me', (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  Google / Firebase sign-in                                         */
+/*                                                                    */
+/*  Only PUBLIC config is used: the browser signs in with Firebase    */
+/*  and sends its ID token; the server verifies it against Google's   */
+/*  public certificates (RS256) and the project id — NO admin SDK and */
+/*  NO service-account private key required. Configure with:          */
+/*    FIREBASE_PROJECT_ID   (required to enable Google sign-in)       */
+/*    FIREBASE_API_KEY      (public web api key, for the browser)     */
+/*    FIREBASE_AUTH_DOMAIN / _APP_ID / _MESSAGING_SENDER_ID (optional)*/
+/* ------------------------------------------------------------------ */
+const GOOGLE_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
+let googleCerts = { at: 0, keys: {} };
+
+async function getGoogleCerts() {
+  if (Date.now() - googleCerts.at < 3600000 && Object.keys(googleCerts.keys).length) return googleCerts.keys;
+  const r = await fetch(GOOGLE_CERTS_URL);
+  if (!r.ok) throw new Error('could not fetch Google certificates');
+  googleCerts = { at: Date.now(), keys: await r.json() };
+  return googleCerts.keys;
+}
+function b64urlToBuf(s) {
+  return Buffer.from(String(s).replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+}
+
+// Verify a Firebase ID token (RS256, Google-signed) without any admin SDK.
+async function verifyFirebaseIdToken(idToken, projectId) {
+  const parts = String(idToken || '').split('.');
+  if (parts.length !== 3) throw new Error('malformed token');
+  let header, payload;
+  try {
+    header = JSON.parse(b64urlToBuf(parts[0]).toString());
+    payload = JSON.parse(b64urlToBuf(parts[1]).toString());
+  } catch { throw new Error('malformed token'); }
+  if (header.alg !== 'RS256') throw new Error('unexpected algorithm');
+
+  const cert = (await getGoogleCerts())[header.kid];
+  if (!cert) throw new Error('unknown signing key');
+
+  const v = crypto.createVerify('RSA-SHA256');
+  v.update(parts[0] + '.' + parts[1]);
+  v.end();
+  if (!v.verify(cert, b64urlToBuf(parts[2]))) throw new Error('bad signature');
+
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.exp && payload.exp < now) throw new Error('token expired');
+  if (payload.aud !== projectId) throw new Error('wrong audience');
+  if (payload.iss !== `https://securetoken.google.com/${projectId}`) throw new Error('wrong issuer');
+  if (!payload.sub) throw new Error('missing subject');
+  return payload;
+}
+
+// Public config the browser needs to run Firebase sign-in.
+app.get('/api/auth/config', (req, res) => {
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  const apiKey = process.env.FIREBASE_API_KEY;
+  if (!projectId || !apiKey) return res.json({ firebase: null });
+  res.json({
+    firebase: {
+      apiKey,
+      authDomain: process.env.FIREBASE_AUTH_DOMAIN || `${projectId}.firebaseapp.com`,
+      projectId,
+      appId: process.env.FIREBASE_APP_ID || undefined,
+      messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || undefined,
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.appspot.com`,
+    },
+  });
+});
+
+app.post('/api/auth/google', async (req, res) => {
+  const projectId = process.env.FIREBASE_PROJECT_ID;
+  if (!projectId) return res.status(501).json({ error: 'Google sign-in not configured' });
+  const { idToken } = req.body || {};
+  if (!idToken) return res.status(400).json({ error: 'idToken required' });
+
+  let payload;
+  try { payload = await verifyFirebaseIdToken(idToken, projectId); }
+  catch (err) { return res.status(401).json({ error: 'Invalid Google sign-in: ' + err.message }); }
+
+  const email = String(payload.email || '').trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: 'No email on this Google account' });
+
+  let user = store.users[email];
+  if (!user) {
+    user = { id: 'user_' + crypto.randomBytes(6).toString('hex'), email, provider: 'google', createdAt: Date.now() };
+    store.users[email] = user;
+    saveStore();
+  }
+  const token = signToken({ uid: user.id, email, exp: Date.now() + TOKEN_TTL });
+  res.json({ token, user: { id: user.id, email } });
+});
+
+/* ------------------------------------------------------------------ */
 /*  Code generation — OpenAI-compatible chat completions              */
 /*                                                                    */
 /*  Works with any OpenAI-style provider (Groq, OpenAI, OpenRouter,   */
@@ -387,4 +479,5 @@ app.listen(PORT, () => {
   console.log(`  Deploy          : ${process.env.VERCEL_TOKEN ? 'Vercel (live)' : 'demo URL (no VERCEL_TOKEN)'}`);
   console.log(`  GitHub mirror   : ${process.env.GITHUB_TOKEN && process.env.GITHUB_OWNER ? 'on' : 'off'}`);
   console.log(`  Auth            : ${storeWritable ? 'file store (data/users.json)' : 'in-memory (disk not writable)'}`);
+  console.log(`  Google sign-in  : ${process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_API_KEY ? `on (project ${process.env.FIREBASE_PROJECT_ID})` : 'off (set FIREBASE_PROJECT_ID + FIREBASE_API_KEY)'}`);
 });
