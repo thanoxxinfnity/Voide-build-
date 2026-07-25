@@ -132,6 +132,62 @@
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
     }
+
+    /* ---------- Build-mode segmented toggle ---------- */
+    .mode-toggle { position: relative; }
+    .mode-pill {
+      position: relative; z-index: 1;
+      transition: color .25s ease;
+    }
+    .mode-thumb {
+      position: absolute; top: 4px; bottom: 4px; left: 4px;
+      width: calc(50% - 4px);
+      border-radius: 12px;
+      background: linear-gradient(135deg, #6366f1 0%, #7c3aed 55%, #06b6d4 130%);
+      box-shadow: 0 6px 18px -6px rgba(99,102,241,.6);
+      transition: transform .32s cubic-bezier(.65,0,.35,1);
+    }
+
+    /* ---------- Template gallery cards ---------- */
+    .tpl-card {
+      position: relative; text-align: left; overflow: hidden;
+      transition: transform .25s cubic-bezier(.2,.8,.2,1), border-color .25s ease, box-shadow .25s ease;
+    }
+    .tpl-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(129,140,248,.5);
+      box-shadow: 0 20px 40px -16px rgba(99,102,241,.4);
+    }
+    .tpl-card:active { transform: translateY(-1px) scale(.99); }
+    .tpl-card .tpl-icon {
+      transition: transform .3s cubic-bezier(.2,.8,.2,1);
+    }
+    .tpl-card:hover .tpl-icon { transform: scale(1.1) rotate(-4deg); }
+    .tpl-card::before {
+      content: ""; position: absolute; inset: 0; z-index: 0; opacity: 0;
+      background: radial-gradient(240px 120px at 15% 0%, rgba(99,102,241,.22), transparent 70%);
+      transition: opacity .3s ease;
+    }
+    .tpl-card:hover::before { opacity: 1; }
+    .tpl-card > * { position: relative; z-index: 1; }
+
+    /* ---------- Header right cluster: swipeable, never clips off-screen ---------- */
+    .header-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+    .header-scroll::-webkit-scrollbar { display: none; }
+
+    /* ---------- Mobile bottom nav (Replit-style) ---------- */
+    @media (max-width: 767px) {
+      .m-nav-bar {
+        position: sticky; bottom: 0; left: 0; right: 0; z-index: 20;
+        padding-bottom: env(safe-area-inset-bottom, 0);
+      }
+    }
+    .m-nav-thumb {
+      position: absolute; top: 4px; bottom: 4px; left: 4px;
+      width: calc(50% - 4px); border-radius: 10px;
+      background: linear-gradient(135deg, #6366f1 0%, #7c3aed 55%, #06b6d4 130%);
+      transition: transform .28s cubic-bezier(.65,0,.35,1);
+    }
   </style>
 </head>
 
@@ -157,34 +213,41 @@
       </span>
     </button>
 
-    <!-- Right cluster -->
-    <div class="flex items-center gap-1.5 sm:gap-3">
+    <!-- Right cluster (swipeable on narrow screens so nothing gets clipped) -->
+    <div class="header-scroll flex min-w-0 items-center gap-1.5 overflow-x-auto sm:gap-3">
       <!-- Account (sign in / avatar) -->
-      <button id="btn-account" class="btn glass flex items-center gap-1.5 rounded-full py-1 pl-1 pr-1 text-xs font-semibold hover:border-white/20 sm:pr-3" title="Account"></button>
+      <button id="btn-account" class="btn glass flex shrink-0 items-center gap-1.5 rounded-full py-1 pl-1 pr-1 text-xs font-semibold hover:border-white/20 sm:pr-3" title="Account"></button>
 
       <!-- Free credits badge (refills every 15 days) -->
-      <button id="plan-badge" class="btn glass flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-semibold hover:border-white/20 sm:gap-2 sm:px-3.5 sm:text-xs" title="Free credits — refill every 15 days"></button>
+      <button id="plan-badge" class="btn glass flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-semibold hover:border-white/20 sm:gap-2 sm:px-3.5 sm:text-xs" title="Free credits — refill every 15 days"></button>
 
       <!-- Settings (AI models) -->
-      <button id="btn-settings" class="btn glass flex items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="Settings — AI models">
+      <button id="btn-settings" class="btn glass flex shrink-0 items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="Settings — AI models">
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         <span class="hidden lg:inline">Settings</span>
       </button>
 
       <!-- Projects (history + new project) -->
-      <button id="btn-projects" class="btn glass flex items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="Your projects">
+      <button id="btn-projects" class="btn glass flex shrink-0 items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="Your projects">
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 8 4.5v9L12 20l-8-4.5v-9L12 2z"/><path d="m12 2 8 4.5-8 4.5-8-4.5L12 2z"/><path d="M12 11v9"/></svg>
         <span class="hidden md:inline">Projects</span>
       </button>
 
       <!-- Download Code -->
-      <button id="btn-download" class="btn glass flex items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="Download Code" disabled>
+      <button id="btn-download" class="btn glass flex shrink-0 items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="Download Code" disabled>
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
         <span class="hidden md:inline">Download Code</span>
       </button>
 
+      <!-- Export to AI Builder (Canvas Game mode only, replaces Deploy while trying things out) -->
+      <button id="btn-export" class="btn btn-primary view-hidden shrink-0 items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-white" title="Happy with it? Export this project to the AI Builder to deploy it live">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v14"/></svg>
+        <span class="hidden sm:inline">Export to AI Builder</span>
+        <span class="sm:hidden">Export</span>
+      </button>
+
       <!-- Deploy / Update Live -->
-      <button id="btn-deploy" class="btn btn-primary flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-white" disabled>
+      <button id="btn-deploy" class="btn btn-primary flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-white" disabled>
         <svg id="deploy-icon-rocket" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
         <svg id="deploy-icon-update" class="hidden h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
         <span id="deploy-label-full" class="hidden sm:inline">Deploy Live</span>
@@ -210,21 +273,32 @@
           <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60"></span>
           <span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
         </span>
-        AI engine online — generation ready
+        <span id="eyebrow-text">AI engine online — generation ready</span>
       </div>
 
       <!-- Headline -->
-      <h1 class="animate-fade-up mt-7 text-center text-4xl font-extrabold tracking-tight sm:text-6xl" style="animation-delay:.08s">
+      <h1 id="hero-headline" class="animate-fade-up mt-7 text-center text-4xl font-extrabold tracking-tight sm:text-6xl" style="animation-delay:.08s">
         <span class="text-white">Build Full Websites</span><br />
         <span class="grad-text">with One Prompt</span>
       </h1>
-      <p class="animate-fade-up mt-5 max-w-xl text-center text-base leading-relaxed text-slate-400 sm:text-lg" style="animation-delay:.16s">
+      <p id="hero-sub" class="animate-fade-up mt-5 max-w-xl text-center text-base leading-relaxed text-slate-400 sm:text-lg" style="animation-delay:.16s">
         Describe your idea. Our AI engine designs, codes and previews a complete,
         production-ready website in seconds — then deploys it live with one click.
       </p>
 
+      <!-- Build mode toggle: Website vs Canvas Game -->
+      <div class="mode-toggle glass-strong animate-fade-up mt-8 grid w-full max-w-xs grid-cols-2 rounded-2xl p-1" style="animation-delay:.2s">
+        <div id="mode-thumb" class="mode-thumb"></div>
+        <button id="mode-website" data-mode="website" class="mode-pill flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-[13px] font-semibold text-white">
+          <span>🌐</span> Website
+        </button>
+        <button id="mode-canvas" data-mode="canvas" class="mode-pill flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-[13px] font-semibold text-slate-400">
+          <span>🎮</span> Canvas Game
+        </button>
+      </div>
+
       <!-- Prompt box -->
-      <div class="animate-fade-up mt-10 w-full" style="animation-delay:.24s">
+      <div class="animate-fade-up mt-6 w-full" style="animation-delay:.24s">
         <div class="glass-strong prompt-glow rounded-2xl p-2 transition-all duration-300">
           <textarea
             id="hero-prompt"
@@ -251,11 +325,11 @@
         <p class="mt-2 text-center text-[11px] text-slate-500"><kbd class="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono">Ctrl</kbd> + <kbd class="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono">Enter</kbd> to generate</p>
       </div>
 
-      <!-- Template chips -->
-      <div class="animate-fade-up mt-8 w-full" style="animation-delay:.32s">
-        <p class="mb-3 text-center text-xs font-medium uppercase tracking-widest text-slate-500">Start from an idea</p>
-        <div id="chip-row" class="flex flex-wrap items-center justify-center gap-2.5">
-          <!-- chips injected by JS -->
+      <!-- Template gallery -->
+      <div class="animate-fade-up mt-10 w-full" style="animation-delay:.32s">
+        <p id="tpl-heading" class="mb-4 text-center text-xs font-medium uppercase tracking-widest text-slate-500">Start from a template</p>
+        <div id="chip-row" class="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <!-- template cards injected by JS -->
         </div>
       </div>
 
@@ -291,10 +365,11 @@
   <!-- ============================================================ -->
   <main id="view-workspace" class="view-hidden h-[calc(100vh-4rem)] gap-3 p-3 md:flex">
 
-    <!-- Mobile panel switcher -->
-    <div class="mb-2 flex gap-2 md:hidden">
-      <button id="m-tab-chat" class="btn glass flex-1 rounded-xl px-3 py-2 text-sm font-semibold text-white">💬 Chat</button>
-      <button id="m-tab-output" class="btn glass flex-1 rounded-xl px-3 py-2 text-sm font-medium text-slate-400">🖥️ Output</button>
+    <!-- Mobile panel switcher (Replit-style segmented control) -->
+    <div class="m-nav-bar glass-strong relative mb-2 grid grid-cols-2 gap-1 rounded-2xl p-1 md:hidden">
+      <div id="m-nav-thumb" class="m-nav-thumb"></div>
+      <button id="m-tab-chat" class="btn relative z-10 flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-white">💬 Chat</button>
+      <button id="m-tab-output" class="btn relative z-10 flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400">🖥️ Output</button>
     </div>
 
     <!-- ---------- LEFT PANEL : CHAT & BUILD LOGS ---------- -->
@@ -703,6 +778,8 @@
     })(),
     projectId: null,
     projectName: null,
+    buildMode: 'website',   // 'website' | 'canvas' — chosen on the hero screen
+    projectMode: 'website', // locked in for the current project once a build starts
     code: '',
     credits: CREDIT_REFILL,      // set for real by initCredits()
     creditsResetAt: 0,           // set for real by initCredits()
@@ -727,6 +804,15 @@
     heroPrompt:    $('#hero-prompt'),
     btnGenerate:   $('#btn-generate'),
     chipRow:       $('#chip-row'),
+    tplHeading:    $('#tpl-heading'),
+    eyebrowText:   $('#eyebrow-text'),
+    heroHeadline:  $('#hero-headline'),
+    heroSub:       $('#hero-sub'),
+    modeWebsite:   $('#mode-website'),
+    modeCanvas:    $('#mode-canvas'),
+    modeThumb:     $('#mode-thumb'),
+    btnExport:     $('#btn-export'),
+    mNavThumb:     $('#m-nav-thumb'),
     chatStream:    $('#chat-stream'),
     refinePrompt:  $('#refine-prompt'),
     btnRefine:     $('#btn-refine'),
@@ -821,22 +907,39 @@
     toastRoot:     $('#toast-root'),
   };
 
-  // ---------- Template prompt chips ----------
-  const TEMPLATES = [
-    { icon: '🚀', label: 'SaaS Landing Page',  prompt: 'A modern SaaS landing page for a team productivity app called "FlowDesk" — dark hero with gradient headline, feature grid, 3-tier pricing table, testimonials and a footer with newsletter signup.' },
-    { icon: '🎨', label: 'Portfolio Site',      prompt: 'A sleek personal portfolio for a product designer — full-screen intro, selected works gallery with hover effects, about section with skill bars, and a contact form.' },
-    { icon: '📈', label: 'Crypto Dashboard',    prompt: 'A dark crypto analytics dashboard — sidebar navigation, stat cards for portfolio value and 24h change, a market table of top coins with sparkline-style trends, and a watchlist panel.' },
-    { icon: '🛍️', label: 'E-commerce Store',    prompt: 'A minimal e-commerce storefront for a sneaker brand — sticky navbar with cart badge, hero banner with featured drop, product grid with prices and add-to-cart buttons, and a promo strip.' },
-    { icon: '🍜', label: 'Restaurant Site',     prompt: 'A warm single-page website for a ramen restaurant — hero with reservation CTA, menu section grouped by category, gallery strip, opening hours and a map/contact footer.' },
-    { icon: '📰', label: 'Blog / Magazine',     prompt: 'A clean editorial blog homepage — masthead, featured article hero, 3-column latest posts grid with tags and reading time, and a subscribe banner.' },
+  // ---------- Template gallery (mode-aware: Website vs Canvas Game) ----------
+  const TEMPLATES_WEBSITE = [
+    { icon: '🚀', label: 'SaaS Landing Page',  desc: 'Hero, pricing tiers, testimonials',   prompt: 'A modern SaaS landing page for a team productivity app called "FlowDesk" — dark hero with gradient headline, feature grid, 3-tier pricing table, testimonials and a footer with newsletter signup.' },
+    { icon: '🎨', label: 'Portfolio Site',      desc: 'Gallery, about, contact form',        prompt: 'A sleek personal portfolio for a product designer — full-screen intro, selected works gallery with hover effects, about section with skill bars, and a contact form.' },
+    { icon: '📈', label: 'Crypto Dashboard',    desc: 'Sidebar, stat cards, market table',   prompt: 'A dark crypto analytics dashboard — sidebar navigation, stat cards for portfolio value and 24h change, a market table of top coins with sparkline-style trends, and a watchlist panel.' },
+    { icon: '🛍️', label: 'E-commerce Store',    desc: 'Product grid, cart, promo banner',    prompt: 'A minimal e-commerce storefront for a sneaker brand — sticky navbar with cart badge, hero banner with featured drop, product grid with prices and add-to-cart buttons, and a promo strip.' },
+    { icon: '🍜', label: 'Restaurant Site',     desc: 'Menu, gallery, reservations',         prompt: 'A warm single-page website for a ramen restaurant — hero with reservation CTA, menu section grouped by category, gallery strip, opening hours and a map/contact footer.' },
+    { icon: '📰', label: 'Blog / Magazine',     desc: 'Masthead, featured post, grid',       prompt: 'A clean editorial blog homepage — masthead, featured article hero, 3-column latest posts grid with tags and reading time, and a subscribe banner.' },
   ];
+
+  const TEMPLATES_CANVAS = [
+    { icon: '🏃', label: 'Endless Runner',   desc: 'Jump/duck obstacles, rising speed',  prompt: 'A neon endless-runner canvas game — player auto-runs, jump with Space/tap to clear obstacles, speed ramps up over time, score counter, glowing particle trail, game-over + restart screen.' },
+    { icon: '🚀', label: 'Space Shooter',    desc: 'Dodge & blast waves of enemies',     prompt: 'A retro arcade space shooter canvas game — arrow keys/touch to move, spacebar/tap to fire, waves of enemies with increasing difficulty, explosion particle effects, score + lives HUD, game-over + restart.' },
+    { icon: '🧱', label: 'Breakout / Brick', desc: 'Paddle, ball physics, brick grid',    prompt: 'A polished breakout/brick-breaker canvas game — mouse or arrow-key paddle, realistic ball physics and bounce angles, colorful brick grid with per-row point values, combo glow effects, win/lose screens.' },
+    { icon: '🐍', label: 'Snake Reimagined', desc: 'Grid movement, growing trail, glow', prompt: 'A modern glowing-neon snake canvas game on a grid — arrow key/swipe controls, growing trail, food pickups, collision game-over, smooth animated turns instead of blocky steps, score HUD.' },
+    { icon: '🕹️', label: 'Platformer',       desc: 'Gravity, jumping, coin collecting',  prompt: 'A simple side-scrolling platformer canvas game — gravity and jump physics, arrow keys/touch controls, platforms to jump across, coins to collect, a goal flag, parallax background layers.' },
+    { icon: '🎯', label: 'Reflex / Match',   desc: 'Fast-paced tap & timing challenge',  prompt: 'A fast-paced reflex/matching canvas mini-game — targets or shapes appear briefly and the player must tap/click the correct one before time runs out, combo multiplier, countdown timer, high-score tracking with juicy feedback animations.' },
+  ];
+
+  function currentTemplates() { return state.buildMode === 'canvas' ? TEMPLATES_CANVAS : TEMPLATES_WEBSITE; }
 
   function renderChips() {
     el.chipRow.innerHTML = '';
-    TEMPLATES.forEach(({ icon, label, prompt }) => {
+    currentTemplates().forEach(({ icon, label, desc, prompt }, i) => {
       const b = document.createElement('button');
-      b.className = 'chip glass flex items-center gap-2 rounded-full px-4 py-2 text-[13px] font-medium text-slate-300 hover:text-white';
-      b.innerHTML = `<span>${icon}</span> ${label}`;
+      b.className = 'tpl-card chip glass flex items-start gap-3 rounded-2xl p-4 text-left animate-fade-up';
+      b.style.animationDelay = `${0.36 + i * 0.05}s`;
+      b.innerHTML = `
+        <span class="tpl-icon grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand-500/25 to-accent-500/20 text-xl">${icon}</span>
+        <span class="min-w-0">
+          <span class="block text-[13.5px] font-semibold text-white">${label}</span>
+          <span class="mt-0.5 block truncate text-[11.5px] text-slate-400">${desc}</span>
+        </span>`;
       b.addEventListener('click', () => {
         el.heroPrompt.value = prompt;
         el.heroPrompt.focus();
@@ -844,6 +947,41 @@
       });
       el.chipRow.appendChild(b);
     });
+  }
+
+  // ---------- Build mode toggle (Website / Canvas Game) ----------
+  const MODE_COPY = {
+    website: {
+      eyebrow: 'AI engine online — generation ready',
+      headline: '<span class="text-white">Build Full Websites</span><br /><span class="grad-text">with One Prompt</span>',
+      sub: 'Describe your idea. Our AI engine designs, codes and previews a complete, production-ready website in seconds — then deploys it live with one click.',
+      placeholder: 'e.g. A modern SaaS landing page for a project-management tool, with pricing tiers, testimonials and a dark hero section…',
+      tplHeading: 'Start from a template',
+    },
+    canvas: {
+      eyebrow: 'Canvas engine online — build a game',
+      headline: '<span class="text-white">Build Playable Games</span><br /><span class="grad-text">with One Prompt</span>',
+      sub: 'Describe the game. Our AI writes a full HTML5 Canvas game with real mechanics and physics — try it instantly, then export it when it feels right.',
+      placeholder: 'e.g. A neon endless runner where you jump over obstacles and the speed ramps up the longer you survive…',
+      tplHeading: 'Start from a game template',
+    },
+  };
+
+  function setBuildMode(mode) {
+    state.buildMode = mode;
+    const on = mode === 'canvas';
+    el.modeThumb.style.transform = on ? 'translateX(100%)' : 'translateX(0)';
+    el.modeWebsite.classList.toggle('text-white', !on);
+    el.modeWebsite.classList.toggle('text-slate-400', on);
+    el.modeCanvas.classList.toggle('text-white', on);
+    el.modeCanvas.classList.toggle('text-slate-400', !on);
+    const c = MODE_COPY[mode];
+    el.eyebrowText.textContent = c.eyebrow;
+    el.heroHeadline.innerHTML = c.headline;
+    el.heroSub.textContent = c.sub;
+    el.heroPrompt.placeholder = c.placeholder;
+    el.tplHeading.textContent = c.tplHeading;
+    renderChips();
   }
 
   // ---------- Toasts ----------
@@ -1019,8 +1157,9 @@
     el.panelChat.classList.toggle('flex', chat || window.innerWidth >= 768);
     el.panelOutput.classList.toggle('hidden', chat && window.innerWidth < 768);
     el.panelOutput.classList.toggle('flex', !chat || window.innerWidth >= 768);
-    el.mTabChat.className   = `btn glass flex-1 rounded-xl px-3 py-2 text-sm ${chat ? 'font-semibold text-white' : 'font-medium text-slate-400'}`;
-    el.mTabOutput.className = `btn glass flex-1 rounded-xl px-3 py-2 text-sm ${!chat ? 'font-semibold text-white' : 'font-medium text-slate-400'}`;
+    el.mTabChat.className   = `btn relative z-10 flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-sm ${chat ? 'font-semibold text-white' : 'font-medium text-slate-400'}`;
+    el.mTabOutput.className = `btn relative z-10 flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-sm ${!chat ? 'font-semibold text-white' : 'font-medium text-slate-400'}`;
+    if (el.mNavThumb) el.mNavThumb.style.transform = chat ? 'translateX(0)' : 'translateX(100%)';
   }
 
   // ---------- Preview & code sync ----------
@@ -1073,9 +1212,9 @@
   }
 
   // ---------- Backend calls (with graceful mock fallback) ----------
-  async function apiGenerateCode(prompt) {
+  async function apiGenerateCode(prompt, mode) {
     const model = activeModel();
-    const payload = { prompt, projectId: state.projectId, userId: state.userId };
+    const payload = { prompt, projectId: state.projectId, userId: state.userId, mode: mode || 'website' };
     // Send the user-selected custom model (server proxies the call).
     if (model) {
       payload.provider = { type: model.type || 'openai', endpoint: model.endpoint, apiKey: model.apiKey, model: model.model };
@@ -1100,7 +1239,7 @@
       // If the user picked a custom model, tell them why it didn't run.
       if (model) toast(`“${model.label}” failed: ${err.message}`.slice(0, 120), 'error');
       await new Promise((r) => setTimeout(r, 600));
-      return { code: mockGenerate(prompt), source: 'mock' };
+      return { code: mockGenerate(prompt, mode), source: 'mock' };
     }
   }
 
@@ -1310,6 +1449,7 @@
     if (state.busy) return;
     state.projectId = null;
     state.projectName = null;
+    state.projectMode = state.buildMode;
     state.code = '';
     state.deployedUrl = null;
     state.attachments = [];
@@ -1337,13 +1477,34 @@
   // The Deploy button becomes an "Update Live" button once a project
   // has been deployed — redeploying pushes the latest code to the SAME
   // live URL, so edits go live again and again (just like Replit).
+  //
+  // Canvas Game projects are for trying ideas out — no deploy button while
+  // in that mode. Once the user is happy, "Export to AI Builder" flips the
+  // project over to website mode, where Deploy Live becomes available.
   function updateDeployButton() {
+    const inCanvas = state.projectMode === 'canvas';
+    el.btnExport.classList.toggle('view-hidden', !inCanvas);
+    el.btnExport.classList.toggle('flex', inCanvas);
+    el.btnExport.disabled = !state.code;
+    el.btnDeploy.classList.toggle('view-hidden', inCanvas);
+
     const deployed = !!state.deployedUrl;
     el.deployLabelFull.textContent  = deployed ? 'Update Live' : 'Deploy Live';
     el.deployLabelShort.textContent = deployed ? 'Update' : 'Deploy';
     el.deployIconRocket.classList.toggle('hidden', deployed);
     el.deployIconUpdate.classList.toggle('hidden', !deployed);
     el.btnDeploy.title = deployed ? 'Push your latest changes live' : 'Publish your site live';
+  }
+
+  // Canvas Game → AI Builder: keep the code, drop the "just trying it out"
+  // mode so the project can be deployed for real.
+  function exportToBuilder() {
+    if (!state.code) return;
+    state.projectMode = 'website';
+    updateDeployButton();
+    el.btnDeploy.disabled = false;
+    addAssistantMessage('Exported to the AI Builder — this project can now be deployed live like any website. Hit **Deploy Live** whenever you\'re ready.');
+    toast('Exported to AI Builder ✅', 'success');
   }
 
   function persistProjects() {
@@ -1904,8 +2065,14 @@
    *  Generates a complete themed site so the whole UI works
    *  even before the Express backend is connected.
    * ============================================================ */
-  function mockGenerate(prompt) {
+  function mockGenerate(prompt, mode) {
     const p = prompt.toLowerCase();
+    if (mode === 'canvas') {
+      if (p.includes('runner') || p.includes('endless') || p.includes('jump')) return mockCanvasRunner();
+      if (p.includes('breakout') || p.includes('brick') || p.includes('paddle')) return mockCanvasBreakout();
+      if (p.includes('shooter') || p.includes('spaceship') || p.includes('enemies')) return mockCanvasShooter();
+      return mockCanvasRunner();
+    }
     if (p.includes('crypto') || p.includes('dashboard') || p.includes('analytics')) return mockDashboard();
     if (p.includes('portfolio') || p.includes('designer') || p.includes('photograph')) return mockPortfolio();
     if (p.includes('shop') || p.includes('commerce') || p.includes('store') || p.includes('sneaker')) return mockStore();
@@ -2278,6 +2445,201 @@
 </html>`;
   }
 
+  const canvasShell = (title, script) => `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>${title}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden;background:#05060d;font-family:system-ui,sans-serif}
+  canvas{display:block;width:100vw;height:100vh;touch-action:none}
+  #hud{position:fixed;top:14px;left:14px;color:#e6e8f2;font-weight:700;font-size:15px;text-shadow:0 2px 8px rgba(0,0,0,.6);z-index:2}
+  #hint{position:fixed;bottom:14px;left:0;right:0;text-align:center;color:#9aa0b5;font-size:12.5px;z-index:2}
+  #over{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;background:rgba(5,6,13,.82);backdrop-filter:blur(6px);z-index:3;text-align:center;padding:20px}
+  #over h2{color:#fff;font-size:28px}
+  #over p{color:#9aa0b5;font-size:14px}
+  #over button{margin-top:6px;padding:12px 28px;border:none;border-radius:12px;font-weight:700;font-size:15px;color:#fff;background:linear-gradient(135deg,#6366f1,#7c3aed,#06b6d4);cursor:pointer}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">Score: <span id="score">0</span></div>
+<div id="hint">Space / Tap to play · Arrow keys or swipe to move</div>
+<div id="over"><h2 id="overTitle">Game Over</h2><p id="overSub">Score: 0</p><button id="overBtn">Play Again</button></div>
+<script>${script}<\/script>
+</body>
+</html>`;
+
+  function mockCanvasRunner() {
+    return canvasShell('Neon Runner — Canvas Game', `
+const c=document.getElementById('c'),ctx=c.getContext('2d');
+let W,H; function resize(){W=c.width=innerWidth;H=c.height=innerHeight;} resize(); addEventListener('resize',resize);
+const scoreEl=document.getElementById('score'), over=document.getElementById('over'), overSub=document.getElementById('overSub'), overBtn=document.getElementById('overBtn');
+let player,obstacles,speed,score,alive,t;
+function reset(){
+  player={x:80,y:0,r:18,vy:0,onGround:true};
+  obstacles=[]; speed=6.5; score=0; alive=true; t=0;
+  over.style.display='none';
+}
+reset();
+function jump(){ if(player.onGround){ player.vy=-15; player.onGround=false; } if(!alive) restart(); }
+addEventListener('keydown',e=>{ if(e.code==='Space'){ e.preventDefault(); jump(); }});
+addEventListener('pointerdown',jump);
+function restart(){ reset(); }
+overBtn.addEventListener('click',e=>{ e.stopPropagation(); restart(); });
+function spawnObstacle(){ obstacles.push({x:W+40,w:26+Math.random()*20,h:34+Math.random()*40}); }
+let spawnTimer=0;
+function loop(){
+  requestAnimationFrame(loop);
+  ctx.clearRect(0,0,W,H);
+  const grad=ctx.createLinearGradient(0,0,0,H); grad.addColorStop(0,'#0b0d1c'); grad.addColorStop(1,'#05060d');
+  ctx.fillStyle=grad; ctx.fillRect(0,0,W,H);
+  const groundY=H*0.72;
+  ctx.strokeStyle='rgba(99,102,241,.35)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(0,groundY); ctx.lineTo(W,groundY); ctx.stroke();
+  if(!alive){ return; }
+  t++; spawnTimer++; speed+=0.0025;
+  if(spawnTimer>Math.max(38,70-speed*2)){ spawnTimer=0; spawnObstacle(); }
+  player.vy+=0.85; player.y+=player.vy;
+  if(player.y>0){ player.y=0; player.vy=0; player.onGround=true; }
+  const px=player.x, py=groundY-player.r-Math.max(0,-player.y);
+  ctx.save(); ctx.shadowBlur=22; ctx.shadowColor='#818cf8';
+  ctx.fillStyle='#a5b4fc'; ctx.beginPath(); ctx.arc(px,py,player.r,0,7); ctx.fill(); ctx.restore();
+  obstacles.forEach(o=>{ o.x-=speed; });
+  ctx.fillStyle='#22d3ee';
+  for(const o of obstacles){
+    const ox=o.x, oy=groundY-o.h;
+    ctx.save(); ctx.shadowBlur=14; ctx.shadowColor='#22d3ee'; ctx.fillRect(ox,oy,o.w,o.h); ctx.restore();
+    const dx=Math.max(ox-px,0,px-(ox+o.w)), dy=Math.max(oy-py,0,py-(oy+o.h));
+    if(Math.sqrt(dx*dx+dy*dy) < player.r*0.85){ alive=false; }
+  }
+  obstacles=obstacles.filter(o=>o.x+o.w>-10);
+  score+=1; scoreEl.textContent=Math.floor(score/5);
+  if(!alive){ overSub.textContent='Score: '+Math.floor(score/5); over.style.display='flex'; }
+}
+loop();
+`);
+  }
+
+  function mockCanvasShooter() {
+    return canvasShell('Void Squadron — Canvas Game', `
+const c=document.getElementById('c'),ctx=c.getContext('2d');
+let W,H; function resize(){W=c.width=innerWidth;H=c.height=innerHeight;} resize(); addEventListener('resize',resize);
+const scoreEl=document.getElementById('score'), over=document.getElementById('over'), overSub=document.getElementById('overSub'), overBtn=document.getElementById('overBtn');
+let ship,bullets,enemies,parts,keys,score,lives,alive,spawnT;
+function reset(){
+  ship={x:0,y:0,r:16}; ship.x=W/2; ship.y=H*0.82;
+  bullets=[]; enemies=[]; parts=[]; keys={}; score=0; lives=3; alive=true; spawnT=0;
+  over.style.display='none';
+}
+reset();
+addEventListener('keydown',e=>{ keys[e.code]=true; if(e.code==='Space'){ e.preventDefault(); shoot(); } });
+addEventListener('keyup',e=>{ keys[e.code]=false; });
+let touchX=null;
+addEventListener('pointerdown',e=>{ touchX=e.clientX; if(!alive) restart(); else shoot(); });
+addEventListener('pointermove',e=>{ if(touchX!==null) ship.x=e.clientX; });
+addEventListener('pointerup',()=>{ touchX=null; });
+overBtn.addEventListener('click',e=>{ e.stopPropagation(); restart(); });
+function restart(){ reset(); }
+function shoot(){ if(alive) bullets.push({x:ship.x,y:ship.y-20,vy:-10}); }
+function spawnEnemy(){ enemies.push({x:40+Math.random()*(W-80),y:-30,vy:2+Math.random()*1.5+score*0.001,r:16}); }
+function burst(x,y,color){ for(let i=0;i<14;i++){ parts.push({x,y,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,life:24,color}); } }
+function loop(){
+  requestAnimationFrame(loop);
+  ctx.fillStyle='#05060d'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(255,255,255,.5)';
+  for(let i=0;i<40;i++){ const sx=(i*97)%W, sy=(i*53+performance.now()*0.02)%H; ctx.fillRect(sx,sy,1.5,1.5); }
+  if(!alive) return;
+  if(keys['ArrowLeft']) ship.x-=6.5; if(keys['ArrowRight']) ship.x+=6.5;
+  ship.x=Math.max(20,Math.min(W-20,ship.x));
+  spawnT++; if(spawnT>Math.max(24,55-score*0.05)){ spawnT=0; spawnEnemy(); }
+  ctx.save(); ctx.translate(ship.x,ship.y); ctx.shadowBlur=18; ctx.shadowColor='#22d3ee';
+  ctx.fillStyle='#a5b4fc'; ctx.beginPath(); ctx.moveTo(0,-20); ctx.lineTo(16,16); ctx.lineTo(-16,16); ctx.closePath(); ctx.fill(); ctx.restore();
+  bullets.forEach(b=>b.y+=b.vy); bullets=bullets.filter(b=>b.y>-20);
+  ctx.fillStyle='#facc15'; bullets.forEach(b=>{ ctx.fillRect(b.x-2,b.y-8,4,12); });
+  enemies.forEach(en=>en.y+=en.vy);
+  ctx.fillStyle='#f472b6';
+  for(const en of enemies){
+    ctx.save(); ctx.shadowBlur=14; ctx.shadowColor='#f472b6'; ctx.beginPath(); ctx.arc(en.x,en.y,en.r,0,7); ctx.fill(); ctx.restore();
+    if(en.y>H+30){ lives--; en.dead=true; if(lives<=0) alive=false; }
+    const dx=en.x-ship.x, dy=en.y-ship.y;
+    if(Math.sqrt(dx*dx+dy*dy)<en.r+16){ lives--; en.dead=true; burst(ship.x,ship.y,'#a5b4fc'); if(lives<=0) alive=false; }
+  }
+  for(const b of bullets){
+    for(const en of enemies){
+      if(en.dead) continue;
+      const dx=en.x-b.x, dy=en.y-b.y;
+      if(Math.sqrt(dx*dx+dy*dy)<en.r){ en.dead=true; b.y=-999; score+=10; burst(en.x,en.y,'#f472b6'); }
+    }
+  }
+  enemies=enemies.filter(e=>!e.dead && e.y<H+40);
+  parts.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.life--; });
+  parts=parts.filter(p=>p.life>0);
+  parts.forEach(p=>{ ctx.globalAlpha=p.life/24; ctx.fillStyle=p.color; ctx.fillRect(p.x,p.y,3,3); ctx.globalAlpha=1; });
+  scoreEl.textContent=score+'  ·  ❤'.repeat(Math.max(0,lives));
+  if(!alive){ overSub.textContent='Score: '+score; over.style.display='flex'; }
+}
+loop();
+`);
+  }
+
+  function mockCanvasBreakout() {
+    return canvasShell('Prism Breakout — Canvas Game', `
+const c=document.getElementById('c'),ctx=c.getContext('2d');
+let W,H; function resize(){W=c.width=innerWidth;H=c.height=innerHeight;} resize(); addEventListener('resize',resize);
+const scoreEl=document.getElementById('score'), over=document.getElementById('over'), overSub=document.getElementById('overSub'), overBtn=document.getElementById('overBtn'), overTitle=document.getElementById('overTitle');
+let paddle,ball,bricks,score,alive,started;
+const colors=['#f472b6','#a5b4fc','#22d3ee','#facc15','#34d399'];
+function makeBricks(){
+  const rows=5, cols=Math.max(6,Math.floor(W/90)), pad=8;
+  const bw=(W-pad*(cols+1))/cols, bh=24;
+  const arr=[];
+  for(let r=0;r<rows;r++) for(let cIdx=0;cIdx<cols;cIdx++){
+    arr.push({x:pad+cIdx*(bw+pad),y:70+r*(bh+pad),w:bw,h:bh,color:colors[r%colors.length],alive:true,pts:(rows-r)*5});
+  }
+  return arr;
+}
+function reset(){
+  paddle={w:110,h:14,x:W/2-55,y:H-50};
+  ball={x:W/2,y:H-70,r:9,vx:5,vy:-6};
+  bricks=makeBricks(); score=0; alive=true; started=false;
+  over.style.display='none';
+}
+reset();
+addEventListener('mousemove',e=>{ paddle.x=Math.max(0,Math.min(W-paddle.w,e.clientX-paddle.w/2)); });
+addEventListener('touchmove',e=>{ const t=e.touches[0]; if(t) paddle.x=Math.max(0,Math.min(W-paddle.w,t.clientX-paddle.w/2)); },{passive:true});
+addEventListener('keydown',e=>{ if(e.code==='ArrowLeft') paddle.x-=30; if(e.code==='ArrowRight') paddle.x+=30; if(e.code==='Space'){ started=true; if(!alive) restart(); } });
+addEventListener('pointerdown',()=>{ started=true; if(!alive) restart(); });
+overBtn.addEventListener('click',e=>{ e.stopPropagation(); restart(); });
+function restart(){ reset(); }
+function loop(){
+  requestAnimationFrame(loop);
+  ctx.fillStyle='#05060d'; ctx.fillRect(0,0,W,H);
+  bricks.forEach(b=>{ if(!b.alive) return; ctx.save(); ctx.shadowBlur=10; ctx.shadowColor=b.color; ctx.fillStyle=b.color; ctx.fillRect(b.x,b.y,b.w,b.h); ctx.restore(); });
+  ctx.save(); ctx.shadowBlur=16; ctx.shadowColor='#818cf8'; ctx.fillStyle='#a5b4fc'; ctx.fillRect(paddle.x,paddle.y,paddle.w,paddle.h); ctx.restore();
+  if(!alive || !started){ ctx.save(); ctx.shadowBlur=16; ctx.shadowColor='#fff'; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r,0,7); ctx.fill(); ctx.restore(); scoreEl.textContent=score; return; }
+  ball.x+=ball.vx; ball.y+=ball.vy;
+  if(ball.x<ball.r||ball.x>W-ball.r) ball.vx*=-1;
+  if(ball.y<ball.r) ball.vy*=-1;
+  if(ball.y>paddle.y-ball.r && ball.y<paddle.y+paddle.h && ball.x>paddle.x && ball.x<paddle.x+paddle.w){
+    ball.vy=-Math.abs(ball.vy); const hit=(ball.x-(paddle.x+paddle.w/2))/(paddle.w/2); ball.vx=hit*7;
+  }
+  if(ball.y>H+30){ alive=false; overTitle.textContent='Game Over'; overSub.textContent='Score: '+score; over.style.display='flex'; }
+  for(const b of bricks){
+    if(!b.alive) continue;
+    if(ball.x>b.x-ball.r && ball.x<b.x+b.w+ball.r && ball.y>b.y-ball.r && ball.y<b.y+b.h+ball.r){
+      b.alive=false; ball.vy*=-1; score+=b.pts; break;
+    }
+  }
+  ctx.save(); ctx.shadowBlur=16; ctx.shadowColor='#fff'; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r,0,7); ctx.fill(); ctx.restore();
+  scoreEl.textContent=score;
+  if(bricks.every(b=>!b.alive)){ alive=false; overTitle.textContent='You Win! 🎉'; overSub.textContent='Score: '+score; over.style.display='flex'; }
+}
+loop();
+`);
+  }
+
   /* ============================================================
    *  AGENTIC BUILD — attachments, secrets, prompt score,
    *  clarification quiz, thinking bubbles & step-by-step build
@@ -2502,10 +2864,11 @@
     el.btnGenerate.disabled = true;
     el.btnRefine.disabled = true;
     setTab('preview');
-    showOverlay('Building your website…', 'The AI engine is working through it');
+    const isCanvas = state.projectMode === 'canvas';
+    showOverlay(isCanvas ? 'Building your game…' : 'Building your website…', isCanvas ? 'The canvas engine is working through it' : 'The AI engine is working through it');
     setBuildStatus('Building', 'building');
 
-    const genPromise = apiGenerateCode(composeBuildPrompt(finalPrompt)); // start the real call now
+    const genPromise = apiGenerateCode(composeBuildPrompt(finalPrompt), state.projectMode); // start the real call now
 
     const think = addThinking('Analyzing your requirements…');
     await pace(1000);
@@ -2516,7 +2879,14 @@
     for (const s of planFromPrompt(finalPrompt)) { addLogLine(pblock, s, 'ok'); await pace(180); }
     await pace(600);
 
-    const steps = [
+    const steps = isCanvas ? [
+      'Setting up the canvas & game loop…',
+      'Building player movement & controls…',
+      'Adding physics & collision detection…',
+      'Spawning obstacles / enemies & scoring…',
+      'Adding particle effects & game-feel polish…',
+      'Wiring up win/lose states & restart…',
+    ] : [
       'Writing semantic HTML…',
       'Styling with a polished design system…',
       'Building out each section & its content…',
@@ -2526,7 +2896,7 @@
     ];
     const sblock = createLogBlock();
     for (const s of steps) { setThinking(think, s); addLogLine(sblock, s, 'run'); await pace(950); }
-    setThinking(think, 'Finalizing your website…');
+    setThinking(think, isCanvas ? 'Finalizing your game…' : 'Finalizing your website…');
 
     try {
       const { code, source } = await genPromise;
@@ -2536,13 +2906,20 @@
       setBuildStatus('Ready', 'ok');
       state.credits = Math.max(0, state.credits - GENERATION_COST);
       saveCredits(); renderCredits(); saveProject();
-      addAssistantMessage(source === 'mock'
-        ? "Here's a first version from the demo engine. Add your own model in Settings for full AI builds — then tell me what to change."
-        : 'Your website is ready! Check the live preview and tell me what to tweak — I\'ll update it.');
+      if (isCanvas) {
+        addAssistantMessage(source === 'mock'
+          ? "Here's a first playable version from the demo engine. Add your own model in Settings for full AI builds. Try it out on the right — when it feels right, hit **Export to AI Builder** to make it deployable."
+          : 'Your game is playable! Try it in the preview and tell me what to tweak. Happy with it? Hit **Export to AI Builder** to make it deployable.');
+      } else {
+        addAssistantMessage(source === 'mock'
+          ? "Here's a first version from the demo engine. Add your own model in Settings for full AI builds — then tell me what to change."
+          : 'Your website is ready! Check the live preview and tell me what to tweak — I\'ll update it.');
+      }
       if (window.innerWidth < 768) setMobilePanel('output');
-      toast('Website ready ✨', 'success');
+      toast(isCanvas ? 'Game ready — try it out 🎮' : 'Website ready ✨', 'success');
       state.attachments = []; renderAttachments();
-      if (state.prefs.autoDeploy) setTimeout(() => startDeploy(), 500);
+      updateDeployButton();
+      if (state.prefs.autoDeploy && !isCanvas) setTimeout(() => startDeploy(), 500);
     } catch (err) {
       think.remove();
       addLogLine(sblock, `Build failed: ${err.message}`, 'err');
@@ -2587,6 +2964,7 @@
 
     state.projectId = state.projectId || pid();
     state.projectName = prompt.slice(0, 42) + (prompt.length > 42 ? '…' : '');
+    state.projectMode = state.buildMode;
     el.projectLabel.textContent = `Project: ${state.projectId}`;
 
     showWorkspace();
@@ -2615,6 +2993,13 @@
   el.heroPrompt.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); beginBuild(el.heroPrompt.value); }
   });
+
+  // Build mode toggle (Website / Canvas Game)
+  el.modeWebsite.addEventListener('click', () => setBuildMode('website'));
+  el.modeCanvas.addEventListener('click', () => setBuildMode('canvas'));
+
+  // Canvas Game → Export to AI Builder
+  el.btnExport.addEventListener('click', exportToBuilder);
 
   // Attach files
   el.btnAttach.addEventListener('click', () => el.fileInput.click());
@@ -2724,7 +3109,7 @@
   });
 
   // ---------- Init ----------
-  renderChips();
+  setBuildMode('website');
   initCredits();
   renderAccountButton();
   refreshMe();

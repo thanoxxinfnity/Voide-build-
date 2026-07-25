@@ -7,7 +7,7 @@ A white-label, single-page **AI Website Builder** — dark theme, glassmorphism,
 | File | Purpose |
 |---|---|
 | `public/index.html` | The complete front-end app (self-contained: markup, styles, logic) |
-| `public/tailwind.css` | Compiled Tailwind build — no CDN dependency |
+| `public/tailwind.css` | Compiled Tailwind build — no CDN dependency (rebuild with `npx tailwindcss@3 -c tailwind.config.js -i <(printf '@tailwind base;@tailwind components;@tailwind utilities;') -o public/tailwind.css --minify` after adding new classes to `index.html`) |
 | `server.js` | Express server: code generation (Groq) + live deploy (Vercel) |
 | `package.json` | Minimal manifest (`express` only) |
 

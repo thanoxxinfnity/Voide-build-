@@ -237,6 +237,21 @@ const SYSTEM_PROMPT = [
   '- Do NOT reference any external files, frameworks, or CDNs — everything self-contained.',
 ].join('\n');
 
+// Canvas Mode — for building 2D games/interactive graphics with <canvas>.
+const CANVAS_SYSTEM_PROMPT = [
+  'You are an expert game developer specializing in the HTML5 Canvas API.',
+  'Generate a COMPLETE, single-file, playable 2D game or interactive graphics demo as ONE HTML document.',
+  'Rules:',
+  '- Return ONLY raw HTML. Start with <!DOCTYPE html> and end with </html>.',
+  '- No markdown, no code fences, no explanations before or after.',
+  '- Use a full-viewport <canvas> element with a requestAnimationFrame game loop, all in one inline <script> tag.',
+  '- Inline ALL CSS inside a <style> tag — the file must work fully standalone, no external files or CDNs.',
+  '- Implement real game mechanics: player input (keyboard/touch), collision detection, score, win/lose states, and a restart flow.',
+  '- Make it visually polished: gradients, particle/glow effects, smooth animation, juicy game-feel — not a bare wireframe.',
+  '- Support both desktop (keyboard) and mobile (on-screen touch controls or swipe/tap) input.',
+  '- Keep it performant: a clean draw loop, no memory leaks, no external assets.',
+].join('\n');
+
 function providerError(status, detail) {
   const err = new Error(`provider responded ${status}`);
   err.status = status;
@@ -314,17 +329,20 @@ function callProvider(cfg, system, user) {
 
 /**
  * POST /api/generate-code
- * Body:    { prompt, projectId?, userId?, provider? }
+ * Body:    { prompt, projectId?, userId?, provider?, mode? }
  *   provider (optional) — a user-added model from Settings:
  *     { type: 'openai'|'anthropic'|'gemini', endpoint?, apiKey, model }
  *   When absent, the server's default Groq config is used.
+ *   mode (optional) — 'canvas' generates a playable HTML5 Canvas game
+ *     instead of a website; anything else (or absent) generates a website.
  * Returns: { code: string }  — a complete HTML document
  */
 app.post('/api/generate-code', async (req, res) => {
-  const { prompt, provider } = req.body || {};
+  const { prompt, provider, mode } = req.body || {};
   if (!prompt || !prompt.trim()) {
     return res.status(400).json({ error: 'prompt is required' });
   }
+  const systemPrompt = mode === 'canvas' ? CANVAS_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
   // Pick the provider: a user-supplied model wins, else server Groq.
   let cfg;
@@ -343,7 +361,7 @@ app.post('/api/generate-code', async (req, res) => {
 
   let raw;
   try {
-    raw = await callProvider(cfg, SYSTEM_PROMPT, prompt);
+    raw = await callProvider(cfg, systemPrompt, prompt);
   } catch (err) {
     console.error('generation error:', err.message, err.detail || '');
     return res.status(502).json({ error: err.detail ? `${err.message}: ${err.detail}` : err.message });
