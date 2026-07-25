@@ -515,6 +515,14 @@
         <p id="auth-subtitle" class="mt-1 text-sm text-slate-400">Sign in to sync your account.</p>
       </div>
 
+      <!-- What signing in unlocks -->
+      <ul class="mb-5 space-y-2 rounded-xl border border-white/10 bg-white/5 p-3.5 text-[12.5px] text-slate-300">
+        <li class="flex items-start gap-2"><span class="mt-0.5 text-emerald-400">✓</span> <span><b class="text-white">499 free credits</b> to build with, refreshed every 15 days</span></li>
+        <li class="flex items-start gap-2"><span class="mt-0.5 text-emerald-400">✓</span> <span><b class="text-white">Real build history</b> — every project saved to your account, on any device</span></li>
+        <li class="flex items-start gap-2"><span class="mt-0.5 text-emerald-400">✓</span> <span><b class="text-white">Teams</b> — invite people to build and edit shared projects together</span></li>
+        <li class="flex items-start gap-2"><span class="mt-0.5 text-emerald-400">✓</span> <span><b class="text-white">Deploy live</b> — publish sites and games to a real URL</span></li>
+      </ul>
+
       <!-- Tabs -->
       <div class="mb-4 flex gap-1 rounded-xl bg-black/25 p-1">
         <button id="atab-signin" class="btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Sign in</button>
@@ -543,7 +551,7 @@
         </button>
       </div>
 
-      <p class="mt-4 text-center text-[11px] text-slate-500">You can keep using the app without an account — signing in just saves your identity.</p>
+      <p class="mt-4 text-center text-[11px] text-slate-500">Free forever — no card, no payment, ever.</p>
     </div>
   </div>
 
@@ -572,6 +580,7 @@
       <div class="mb-4 flex gap-1 rounded-xl bg-black/25 p-1">
         <button data-stab="models" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Models</button>
         <button data-stab="secrets" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Secrets</button>
+        <button data-stab="team" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Team</button>
         <button data-stab="prefs" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Preferences</button>
       </div>
 
@@ -632,6 +641,18 @@
           <button id="btn-add-secret" class="btn btn-primary rounded-lg px-4 py-2 text-sm font-semibold text-white">Add</button>
         </div>
         <p class="mt-2 text-[11px] text-slate-600">The AI can see secret <b>names</b> to wire them up, but values stay on this device.</p>
+      </div>
+
+      <!-- TAB: Team ---------------------------------------------------- -->
+      <div id="stab-team" class="view-hidden">
+        <p class="mb-3 text-sm text-slate-400">Create a team so multiple people can build and edit the same projects together.</p>
+        <div id="teams-list" class="space-y-2"></div>
+
+        <div class="mt-4 flex gap-2">
+          <input id="tf-name" type="text" placeholder="Team name (e.g. Acme Studio)" class="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+          <button id="btn-create-team" class="btn btn-primary shrink-0 rounded-lg px-4 py-2 text-sm font-semibold text-white">Create</button>
+        </div>
+        <p class="mt-2 text-[11px] text-slate-600">Add teammates by email once a team is created — they'll see it next time they sign in with that address.</p>
       </div>
 
       <!-- TAB: Preferences ------------------------------------------- -->
@@ -762,6 +783,8 @@
   const API = {
     generate: '/api/generate-code',
     deploy:   '/api/deploy-vercel',
+    projects: '/api/projects',
+    teams:    '/api/teams',
   };
   const GENERATION_COST = 1;   // credits per generation
   const CREDIT_REFILL   = 499; // free credits granted each cycle
@@ -786,7 +809,9 @@
     busy: false,
     deployedUrl: null,
     activeTab: 'preview',
-    projects: JSON.parse(localStorage.getItem('aws_projects') || '[]'),
+    projects: [],           // real build history — loaded from the server once signed in
+    teams: [],               // teams the signed-in user belongs to
+    activeTeamId: null,       // null = save new builds as personal projects
     models: JSON.parse(localStorage.getItem('aws_models') || '[]'),
     activeModelId: localStorage.getItem('aws_active_model') || null, // null = server default
     secrets: JSON.parse(localStorage.getItem('aws_secrets') || '[]'),
@@ -862,6 +887,9 @@
     secretsList:      $('#secrets-list'),
     sfName:           $('#sf-name'),
     sfValue:          $('#sf-value'),
+    teamsList:        $('#teams-list'),
+    tfName:           $('#tf-name'),
+    btnCreateTeam:    $('#btn-create-team'),
     pfThorough:       $('#pf-thorough'),
     pfAutodeploy:     $('#pf-autodeploy'),
     pfClarify:        $('#pf-clarify'),
@@ -1212,7 +1240,14 @@
   }
 
   // ---------- Backend calls (with graceful mock fallback) ----------
+  // Bearer header for every authenticated call — signing in is required
+  // for anything that generates, deploys, or touches saved projects/teams.
+  function authHeaders() {
+    return state.auth?.token ? { Authorization: `Bearer ${state.auth.token}` } : {};
+  }
+
   async function apiGenerateCode(prompt, mode) {
+    if (!state.auth?.user) throw Object.assign(new Error('Sign in required'), { authRequired: true });
     const model = activeModel();
     const payload = { prompt, projectId: state.projectId, userId: state.userId, mode: mode || 'website' };
     // Send the user-selected custom model (server proxies the call).
@@ -1222,9 +1257,10 @@
     try {
       const res = await fetch(API.generate, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(payload),
       });
+      if (res.status === 401) throw Object.assign(new Error('Sign in required'), { authRequired: true });
       if (!res.ok) {
         let msg = `Generation API responded ${res.status}`;
         try { const e = await res.json(); if (e.error) msg = e.error; } catch {}
@@ -1235,6 +1271,7 @@
       if (!code) throw new Error('Generation API returned no code');
       return { code, source: 'api' };
     } catch (err) {
+      if (err.authRequired) throw err;
       console.warn('[AI Web Studio] Falling back to local engine:', err.message);
       // If the user picked a custom model, tell them why it didn't run.
       if (model) toast(`“${model.label}” failed: ${err.message}`.slice(0, 120), 'error');
@@ -1244,18 +1281,21 @@
   }
 
   async function apiDeploy() {
+    if (!state.auth?.user) throw Object.assign(new Error('Sign in required'), { authRequired: true });
     const payload = { projectId: state.projectId, userId: state.userId, code: state.code };
     try {
       const res = await fetch(API.deploy, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify(payload),
       });
+      if (res.status === 401) throw Object.assign(new Error('Sign in required'), { authRequired: true });
       if (!res.ok) throw new Error(`Deploy API responded ${res.status}`);
       const data = await res.json();
       if (!data.url) throw new Error('Deploy API returned no URL');
       return { url: data.url, source: 'api' };
     } catch (err) {
+      if (err.authRequired) throw err;
       console.warn('[AI Web Studio] Deploy falling back to demo URL:', err.message);
       await new Promise((r) => setTimeout(r, 2400));
       return { url: `https://${state.projectId.replace('proj_', 'site-')}.aiwebstudio.app`, source: 'mock' };
@@ -1507,39 +1547,48 @@
     toast('Exported to AI Builder ✅', 'success');
   }
 
-  function persistProjects() {
-    // Keep the newest 40 projects; code can be large so we cap it.
-    localStorage.setItem('aws_projects', JSON.stringify(state.projects.slice(0, 40)));
+  // Real, server-side build history — every save reaches the account (and,
+  // if a team is active, the whole team), so it's there on any device.
+  async function fetchProjects() {
+    if (!state.auth?.user) { state.projects = []; return; }
+    try {
+      const res = await fetch(API.projects, { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      state.projects = data.projects || [];
+    } catch { /* offline — keep whatever we already have in memory */ }
   }
 
-  // Insert or update the current project in history (newest first).
-  function saveProject() {
-    if (!state.projectId || !state.code) return;
-    const now = Date.now();
-    const existing = state.projects.find((p) => p.id === state.projectId);
-    if (existing) {
-      existing.name = state.projectName || existing.name;
-      existing.code = state.code;
-      existing.deployedUrl = state.deployedUrl || existing.deployedUrl;
-      existing.updatedAt = now;
-      // Move it to the front.
-      state.projects = [existing, ...state.projects.filter((p) => p.id !== state.projectId)];
-    } else {
-      state.projects.unshift({
-        id: state.projectId,
-        name: state.projectName || 'Untitled project',
-        code: state.code,
-        deployedUrl: state.deployedUrl || null,
-        createdAt: now,
-        updatedAt: now,
+  // Insert or update the current project in history (newest first), saved
+  // to the signed-in account (and shared with state.activeTeamId, if set).
+  async function saveProject() {
+    if (!state.projectId || !state.code || !state.auth?.user) return;
+    const body = {
+      id: state.projectId,
+      name: state.projectName || 'Untitled project',
+      mode: state.projectMode,
+      code: state.code,
+      deployedUrl: state.deployedUrl || null,
+      teamId: state.activeTeamId || null,
+    };
+    try {
+      const res = await fetch(API.projects, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(body),
       });
-    }
-    persistProjects();
+      if (!res.ok) return;
+      const { project } = await res.json();
+      state.projects = [project, ...state.projects.filter((p) => p.id !== project.id)];
+    } catch { /* offline — the build itself is unaffected, just not saved yet */ }
   }
 
-  function deleteProject(id) {
+  async function deleteProject(id) {
+    try {
+      const res = await fetch(`${API.projects}/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
+      if (!res.ok) { toast('Could not delete project', 'error'); return; }
+    } catch { toast('Could not delete project — check your connection', 'error'); return; }
     state.projects = state.projects.filter((p) => p.id !== id);
-    persistProjects();
     renderProjects();
     toast('Project deleted');
   }
@@ -1550,8 +1599,10 @@
     if (!p) return;
     state.projectId = p.id;
     state.projectName = p.name;
+    state.projectMode = p.mode || 'website';
+    state.activeTeamId = p.teamId || null;
     state.deployedUrl = p.deployedUrl || null;
-    el.projectLabel.textContent = `Project: ${p.id}`;
+    el.projectLabel.textContent = projectLabelText(p.id);
     el.chatStream.innerHTML = '';
     closeProjects();
     showWorkspace();
@@ -1579,15 +1630,18 @@
     state.projects.forEach((p) => {
       const row = document.createElement('div');
       row.className = 'glass flex items-center gap-3 rounded-xl px-3.5 py-3';
+      const team = p.teamId ? state.teams.find((t) => t.id === p.teamId) : null;
       row.innerHTML = `
         <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-500/15 text-brand-300">
           <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/></svg>
         </span>
         <button class="proj-open min-w-0 flex-1 text-left">
           <div class="truncate text-sm font-semibold text-white"></div>
-          <div class="mt-0.5 flex items-center gap-2 text-[11px] text-slate-500">
+          <div class="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
             <span>${relTime(p.updatedAt)}</span>
             ${p.deployedUrl ? '<span class="text-emerald-400">● Live</span>' : '<span class="text-slate-600">Not deployed</span>'}
+            ${p.mode === 'canvas' ? '<span class="text-violet-300">🎮 Game</span>' : ''}
+            ${team ? `<span class="rounded-full bg-brand-500/15 px-2 py-0.5 text-brand-300">👥 ${team.name}</span>` : ''}
           </div>
         </button>
         <button class="proj-del btn shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-rose-500/15 hover:text-rose-300" title="Delete project">
@@ -1600,14 +1654,165 @@
     });
   }
 
-  function openProjects() {
-    renderProjects();
+  async function openProjects() {
+    el.projectsList.innerHTML = '<p class="py-6 text-center text-sm text-slate-500">Loading your projects…</p>';
     el.projectsModal.classList.remove('view-hidden');
     document.body.style.overflow = 'hidden';
+    await Promise.all([fetchProjects(), fetchTeams()]);
+    renderProjects();
   }
   function closeProjects() {
     el.projectsModal.classList.add('view-hidden');
     document.body.style.overflow = '';
+  }
+
+  /* ============================================================
+   *  TEAMS — real team formation.
+   *  Any signed-in user can create a team and add teammates by email;
+   *  every member can see and build on the team's shared projects.
+   *  Picking a team as "active" makes new builds save there instead
+   *  of to your personal history.
+   * ============================================================ */
+  async function fetchTeams() {
+    if (!state.auth?.user) { state.teams = []; return; }
+    try {
+      const res = await fetch(API.teams, { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      state.teams = data.teams || [];
+      if (state.activeTeamId && !state.teams.some((t) => t.id === state.activeTeamId)) state.activeTeamId = null;
+    } catch { /* offline — keep whatever we already have in memory */ }
+  }
+
+  async function createTeam() {
+    const name = el.tfName.value.trim();
+    if (!name) return;
+    el.btnCreateTeam.disabled = true;
+    try {
+      const res = await fetch(API.teams, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not create team');
+      state.teams.unshift(data.team);
+      state.activeTeamId = data.team.id;
+      el.tfName.value = '';
+      renderTeams();
+      toast(`Team “${data.team.name}” created 👥`, 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      el.btnCreateTeam.disabled = false;
+    }
+  }
+
+  async function addTeamMember(teamId, email) {
+    try {
+      const res = await fetch(`${API.teams}/${encodeURIComponent(teamId)}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not add member');
+      state.teams = state.teams.map((t) => (t.id === teamId ? data.team : t));
+      renderTeams();
+      toast(`Added ${email} to the team`, 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
+
+  async function removeTeamMember(teamId, email) {
+    try {
+      const res = await fetch(`${API.teams}/${encodeURIComponent(teamId)}/members/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not remove member');
+      state.teams = state.teams.map((t) => (t.id === teamId ? data.team : t));
+      renderTeams();
+      toast('Member removed');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
+
+  function projectLabelText(id) {
+    const team = state.activeTeamId ? state.teams.find((t) => t.id === state.activeTeamId) : null;
+    return `Project: ${id}` + (team ? `  ·  👥 ${team.name}` : '');
+  }
+
+  function setActiveTeam(teamId) {
+    state.activeTeamId = teamId || null;
+    renderTeams();
+    toast(teamId ? 'New builds will be saved to this team' : 'New builds will be saved to Personal');
+  }
+
+  function renderTeams() {
+    el.teamsList.innerHTML = '';
+    if (!state.teams.length) {
+      el.teamsList.innerHTML = '<p class="py-4 text-center text-sm text-slate-500">No teams yet — create one below to build together.</p>';
+      return;
+    }
+    const me = state.auth?.user?.email;
+    state.teams.forEach((team) => {
+      const isActive = state.activeTeamId === team.id;
+      const isOwner = team.ownerEmail === me;
+      const card = document.createElement('div');
+      card.className = `rounded-xl border p-3.5 ${isActive ? 'border-brand-400/50 bg-brand-500/10' : 'border-white/10 bg-white/5'}`;
+      card.innerHTML = `
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="truncate text-sm font-semibold text-white"></span>
+              ${isActive ? '<span class="shrink-0 rounded-full bg-brand-500/25 px-2 py-0.5 text-[10px] font-semibold text-brand-200">ACTIVE</span>' : ''}
+            </div>
+            <div class="mt-0.5 text-[11px] text-slate-500"></div>
+          </div>
+          <button class="team-pick btn glass shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:text-white">${isActive ? 'Use Personal' : 'Build here'}</button>
+        </div>
+        <div class="team-members mt-3 space-y-1.5"></div>
+        ${isOwner ? `
+        <div class="mt-3 flex gap-2">
+          <input type="email" placeholder="teammate@email.com" class="team-invite-email flex-1 rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+          <button class="team-invite-btn btn btn-primary shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-white">Add</button>
+        </div>` : ''}`;
+      card.querySelector('.text-sm.font-semibold').textContent = team.name;
+      card.querySelector('.mt-0\\.5').textContent = `${team.members.length} member${team.members.length > 1 ? 's' : ''} · you're ${isOwner ? 'the owner' : 'a member'}`;
+      card.querySelector('.team-pick').addEventListener('click', () => setActiveTeam(isActive ? null : team.id));
+
+      const membersWrap = card.querySelector('.team-members');
+      team.members.forEach((m) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between gap-2 text-xs text-slate-400';
+        row.innerHTML = `
+          <span class="truncate">${m.role === 'owner' ? '👑' : '👤'} ${m.email}${m.email === me ? ' (you)' : ''}</span>
+          ${isOwner && m.role !== 'owner' ? '<button class="member-x shrink-0 text-slate-600 hover:text-rose-300" title="Remove">✕</button>' : ''}`;
+        if (isOwner && m.role !== 'owner') {
+          row.querySelector('.member-x').addEventListener('click', () => removeTeamMember(team.id, m.email));
+        }
+        membersWrap.appendChild(row);
+      });
+
+      if (isOwner) {
+        const emailInput = card.querySelector('.team-invite-email');
+        const inviteBtn = card.querySelector('.team-invite-btn');
+        const doInvite = () => {
+          const email = emailInput.value.trim();
+          if (!email) return;
+          addTeamMember(team.id, email);
+          emailInput.value = '';
+        };
+        inviteBtn.addEventListener('click', doInvite);
+        emailInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doInvite(); });
+      }
+
+      el.teamsList.appendChild(card);
+    });
   }
 
   /* ============================================================
@@ -1770,7 +1975,7 @@
   }
 
   function setSettingsTab(tab) {
-    ['models', 'secrets', 'prefs'].forEach((t) => {
+    ['models', 'secrets', 'team', 'prefs'].forEach((t) => {
       $('#stab-' + t).classList.toggle('view-hidden', t !== tab);
     });
     document.querySelectorAll('.stab').forEach((b) => {
@@ -1781,7 +1986,7 @@
     });
   }
 
-  function openSettings(tab) {
+  async function openSettings(tab) {
     hideModelForm();
     renderAccountCard();
     renderModels();
@@ -1792,6 +1997,9 @@
     setSettingsTab(tab || 'models');
     el.settingsModal.classList.remove('view-hidden');
     document.body.style.overflow = 'hidden';
+    el.teamsList.innerHTML = '<p class="py-4 text-center text-sm text-slate-500">Loading your teams…</p>';
+    await fetchTeams();
+    renderTeams();
   }
   function closeSettings() {
     el.settingsModal.classList.add('view-hidden');
@@ -1888,6 +2096,25 @@
     el.authModal.classList.add('view-hidden');
     document.body.style.overflow = '';
   }
+
+  // ---------- Sign-in gate ----------
+  // Nothing that actually DOES something works signed out: generating,
+  // deploying, settings and build history all require an account. `gate`
+  // runs the action immediately if signed in, otherwise opens sign-in and
+  // re-runs the same action automatically the moment it succeeds.
+  let pendingAfterAuth = null;
+  function gate(action) {
+    if (state.auth?.user) { action(); return true; }
+    pendingAfterAuth = action;
+    openAuth('signin');
+    toast('Sign in first — it\'s free 🔒', 'info');
+    return false;
+  }
+  function runPendingAfterAuth() {
+    const fn = pendingAfterAuth;
+    pendingAfterAuth = null;
+    if (fn) fn();
+  }
   function authErr(msg) {
     el.authError.textContent = msg;
     el.authError.classList.remove('view-hidden');
@@ -1913,6 +2140,8 @@
       el.afPassword.value = '';
       closeAuth();
       toast(`Welcome${authMode === 'signup' ? '' : ' back'}, ${data.user.email} 👋`, 'success');
+      fetchTeams();
+      runPendingAfterAuth();
     } catch (err) {
       authErr(err.message);
     } finally {
@@ -1923,6 +2152,9 @@
 
   function doLogout() {
     state.auth = null;
+    state.projects = [];
+    state.teams = [];
+    state.activeTeamId = null;
     saveAuth();
     renderAccountButton();
     renderAccountCard();
@@ -1935,7 +2167,13 @@
     try {
       const res = await fetch(API_AUTH.me, { headers: { Authorization: `Bearer ${state.auth.token}` } });
       if (res.status === 401) { state.auth = null; saveAuth(); renderAccountButton(); return; }
-      if (res.ok) { const d = await res.json(); state.auth.user = d.user; saveAuth(); renderAccountButton(); }
+      if (res.ok) {
+        const d = await res.json();
+        state.auth.user = d.user;
+        saveAuth();
+        renderAccountButton();
+        fetchTeams();
+      }
     } catch { /* offline — keep the cached identity */ }
   }
 
@@ -1987,6 +2225,8 @@
       renderAccountButton();
       closeAuth();
       toast(`Welcome, ${data.user.email} 👋`, 'success');
+      fetchTeams();
+      runPendingAfterAuth();
     } catch (err) {
       const msg = err && err.code === 'auth/popup-closed-by-user' ? 'Sign-in cancelled' : (err.message || 'Google sign-in failed');
       authErr(msg);
@@ -2922,11 +3162,19 @@ loop();
       if (state.prefs.autoDeploy && !isCanvas) setTimeout(() => startDeploy(), 500);
     } catch (err) {
       think.remove();
-      addLogLine(sblock, `Build failed: ${err.message}`, 'err');
-      setBuildStatus('Error', 'err');
-      showOverlay('Generation failed', 'Please try again in a moment');
-      addAssistantMessage('Something went wrong during the build. Please try again.');
-      toast('Generation failed — please retry', 'error');
+      if (err.authRequired) {
+        addLogLine(sblock, 'Build stopped — sign-in required', 'err');
+        setBuildStatus('Idle', 'idle');
+        showOverlay('Sign in to build', 'Your session expired — sign in to keep going');
+        state.auth = null; saveAuth(); renderAccountButton();
+        gate(() => beginBuild(finalPrompt));
+      } else {
+        addLogLine(sblock, `Build failed: ${err.message}`, 'err');
+        setBuildStatus('Error', 'err');
+        showOverlay('Generation failed', 'Please try again in a moment');
+        addAssistantMessage('Something went wrong during the build. Please try again.');
+        toast('Generation failed — please retry', 'error');
+      }
     } finally {
       state.busy = false;
       el.btnGenerate.disabled = false;
@@ -2965,7 +3213,7 @@ loop();
     state.projectId = state.projectId || pid();
     state.projectName = prompt.slice(0, 42) + (prompt.length > 42 ? '…' : '');
     state.projectMode = state.buildMode;
-    el.projectLabel.textContent = `Project: ${state.projectId}`;
+    el.projectLabel.textContent = projectLabelText(state.projectId);
 
     showWorkspace();
     setMobilePanel('chat');
@@ -2989,9 +3237,9 @@ loop();
    *  EVENT WIRING
    * ============================================================ */
   // Hero
-  el.btnGenerate.addEventListener('click', () => beginBuild(el.heroPrompt.value));
+  el.btnGenerate.addEventListener('click', () => gate(() => beginBuild(el.heroPrompt.value)));
   el.heroPrompt.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); beginBuild(el.heroPrompt.value); }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); gate(() => beginBuild(el.heroPrompt.value)); }
   });
 
   // Build mode toggle (Website / Canvas Game)
@@ -3039,8 +3287,8 @@ loop();
   // Header actions
   el.btnCopy.addEventListener('click', copyCode);
   el.btnDownload.addEventListener('click', downloadCode);
-  el.btnDeploy.addEventListener('click', startDeploy);
-  el.btnProjects.addEventListener('click', openProjects);
+  el.btnDeploy.addEventListener('click', () => gate(startDeploy));
+  el.btnProjects.addEventListener('click', () => gate(openProjects));
   el.btnHome.addEventListener('click', () => { if (!state.busy) showHero(); });
   el.btnRefresh.addEventListener('click', () => { if (state.code) el.iframe.srcdoc = state.code; });
 
@@ -3061,7 +3309,7 @@ loop();
   $('#btn-google').addEventListener('click', googleSignIn);
 
   // Settings / profile modal
-  el.btnSettings.addEventListener('click', () => openSettings('models'));
+  el.btnSettings.addEventListener('click', () => gate(() => openSettings('models')));
   el.settingsBackdrop.addEventListener('click', closeSettings);
   $('#btn-close-settings').addEventListener('click', closeSettings);
   $('#btn-add-model').addEventListener('click', () => showModelForm(null));
@@ -3074,6 +3322,9 @@ loop();
     if (addSecret(el.sfName.value, el.sfValue.value)) { el.sfName.value = ''; el.sfValue.value = ''; }
   });
   el.sfValue.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btn-add-secret').click(); });
+  // Team
+  el.btnCreateTeam.addEventListener('click', createTeam);
+  el.tfName.addEventListener('keydown', (e) => { if (e.key === 'Enter') createTeam(); });
   // Preferences
   el.pfThorough.addEventListener('change', () => { state.prefs.thorough = el.pfThorough.checked; persistPrefs(); });
   el.pfAutodeploy.addEventListener('change', () => { state.prefs.autoDeploy = el.pfAutodeploy.checked; persistPrefs(); });

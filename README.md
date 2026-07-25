@@ -24,7 +24,9 @@ A white-label, single-page **AI Website Builder** — dark theme, glassmorphism,
 - **Canvas Game mode** — a mode toggle on the hero screen switches from building websites to building playable **HTML5 Canvas games** (endless runners, shooters, breakout, platformers…), with its own template gallery and a dedicated game-dev system prompt. Canvas projects have **no Deploy button** — they're for trying ideas — until you hit **Export to AI Builder**, which unlocks Deploy Live for that project. Builds still spend credits either way.
 - **Secrets / env vars** — a private vault (Settings → Secrets). Values never appear in chat; the AI only sees secret **names** to wire placeholders. Paste an API key into chat and a **"Add to secrets"** prompt appears so it's stored safely instead.
 - **File upload** — attach images, 3D models (`.glb/.gltf`), video or assets to a prompt (great for 3D/animated sites; CDN libraries like three.js/GSAP are allowed for those builds).
-- **Sign in / Sign up** — real email + password accounts (server-side, scrypt-hashed, signed session tokens). Optional: the app stays fully usable signed-out; signing in just saves your identity. Models, secrets, preferences and projects are still stored on-device.
+- **Sign in / Sign up required** — real email + password accounts (server-side, scrypt-hashed, signed session tokens). Generating, deploying, downloading, Settings and Projects are all gated behind sign-in — the hero and template gallery are browsable, but the moment you hit **Generate App** (or any other real action) while signed out, sign-in opens with a benefits list and the app **automatically continues your build the instant you're signed in**.
+- **Real, server-side build history** — every project is saved to your account (`data/users.json`), not just the browser — sign in on any device and your projects, team memberships and Team Studio content are exactly as you left them.
+- **Teams** — create a team in **Settings → Team** and add teammates by email; everyone on the team can see, reopen and edit the team's shared projects. Pick "Build here" on a team to save your next builds there instead of to your personal history — the Build Console and Projects list always show which team (if any) a project belongs to.
 - **Fully mobile friendly** — the header collapses to compact icon buttons, and below `768px` the workspace becomes a Chat / Output switcher.
 
 ## API contract
@@ -32,13 +34,23 @@ A white-label, single-page **AI Website Builder** — dark theme, glassmorphism,
 The front-end calls these endpoints and degrades gracefully to a built-in demo engine when they're absent, so the UI is fully usable before the backend is wired up:
 
 ```
-POST /api/generate-code   { prompt, projectId, userId, provider? }  →  { code }
-POST /api/deploy-vercel   { projectId, userId, code }               →  { url }
-POST /api/auth/signup     { email, password }                       →  { token, user }
-POST /api/auth/login      { email, password }                       →  { token, user }
-GET  /api/auth/me         (Authorization: Bearer <token>)           →  { user }
-GET  /api/auth/config      →  { firebase: <public web config> | null }
-POST /api/auth/google     { idToken }                               →  { token, user }
+POST   /api/auth/signup     { email, password }                       →  { token, user }
+POST   /api/auth/login      { email, password }                       →  { token, user }
+GET    /api/auth/me         (Authorization: Bearer <token>)           →  { user }
+GET    /api/auth/config     →  { firebase: <public web config> | null }
+POST   /api/auth/google     { idToken }                               →  { token, user }
+
+# Everything below requires Authorization: Bearer <token> — signed out gets 401.
+POST   /api/generate-code   { prompt, provider?, mode? }              →  { code }
+POST   /api/deploy-vercel   { projectId, code }                       →  { url }
+GET    /api/projects        →  { projects: [...] }         (yours + any team's)
+POST   /api/projects        { id?, name, mode, code, deployedUrl?, teamId? }  →  { project }
+DELETE /api/projects/:id    →  { ok: true }
+GET    /api/teams           →  { teams: [...] }             (teams you belong to)
+POST   /api/teams           { name }                        →  { team }
+POST   /api/teams/:id/members       { email }                →  { team }   (owner only)
+DELETE /api/teams/:id/members/:email →  { team }             (owner, or leave yourself)
+DELETE /api/teams/:id       →  { ok: true }                  (owner only)
 ```
 
 ## Accounts (sign in / sign up)
@@ -49,7 +61,7 @@ Email + password auth is built in — no third-party service. Passwords are hash
 AUTH_SECRET   optional — signing secret for session tokens (random per boot if unset)
 ```
 
-The whole app works signed-out; accounts just save the user's identity (shown in the header and profile).
+The hero screen and template gallery are browsable signed-out, but generating, deploying, downloading and Settings/Projects all require an account — that's what makes build history and teams real instead of per-browser localStorage.
 
 ### Google sign-in (Firebase)
 

@@ -51,6 +51,8 @@ function saveStore() {
 function loadStore() {
   try { store = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')); } catch { /* fresh store */ }
   if (!store.users) store.users = {};
+  if (!store.teams) store.teams = {};
+  if (!store.projects) store.projects = {};
   if (!store.secret) { store.secret = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex'); saveStore(); }
 }
 loadStore();
@@ -89,6 +91,15 @@ function bearer(req) {
 }
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const TOKEN_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+// Everything that actually DOES something (generate, deploy, save/load
+// projects, teams) requires a signed-in account — attaches req.auth = { uid, email }.
+function requireAuth(req, res, next) {
+  const p = verifyToken(bearer(req));
+  if (!p || !p.email) return res.status(401).json({ error: 'Sign in required' });
+  req.auth = p;
+  next();
+}
 
 app.post('/api/auth/signup', (req, res) => {
   const email = String((req.body || {}).email || '').trim().toLowerCase();
@@ -215,6 +226,136 @@ app.post('/api/auth/google', async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  Teams — real, minimal team formation.                             */
+/*  A team is a name + a list of member emails. The owner adds        */
+/*  teammates by email (added instantly — there's no email server,    */
+/*  so it's "add", not a pending invite); any member can see and      */
+/*  build on the team's shared projects.                              */
+/* ------------------------------------------------------------------ */
+function teamsForEmail(email) {
+  return Object.values(store.teams).filter((t) => t.members.some((m) => m.email === email));
+}
+function teamRole(team, email) {
+  const m = team.members.find((m) => m.email === email);
+  return m ? m.role : null;
+}
+
+app.get('/api/teams', requireAuth, (req, res) => {
+  res.json({ teams: teamsForEmail(req.auth.email) });
+});
+
+app.post('/api/teams', requireAuth, (req, res) => {
+  const name = String((req.body || {}).name || '').trim().slice(0, 60);
+  if (!name) return res.status(400).json({ error: 'Team name is required' });
+  const team = {
+    id: 'team_' + crypto.randomBytes(6).toString('hex'),
+    name,
+    ownerEmail: req.auth.email,
+    members: [{ email: req.auth.email, role: 'owner' }],
+    createdAt: Date.now(),
+  };
+  store.teams[team.id] = team;
+  saveStore();
+  res.json({ team });
+});
+
+app.post('/api/teams/:id/members', requireAuth, (req, res) => {
+  const team = store.teams[req.params.id];
+  if (!team) return res.status(404).json({ error: 'Team not found' });
+  if (teamRole(team, req.auth.email) !== 'owner') return res.status(403).json({ error: 'Only the team owner can add members' });
+  const email = String((req.body || {}).email || '').trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Please enter a valid email' });
+  if (!team.members.some((m) => m.email === email)) {
+    team.members.push({ email, role: 'member' });
+    saveStore();
+  }
+  res.json({ team });
+});
+
+app.delete('/api/teams/:id/members/:email', requireAuth, (req, res) => {
+  const team = store.teams[req.params.id];
+  if (!team) return res.status(404).json({ error: 'Team not found' });
+  const target = String(req.params.email || '').trim().toLowerCase();
+  const isOwner = teamRole(team, req.auth.email) === 'owner';
+  if (!isOwner && target !== req.auth.email) return res.status(403).json({ error: 'Only the team owner can remove members' });
+  if (target === team.ownerEmail) return res.status(400).json({ error: "Can't remove the team owner" });
+  team.members = team.members.filter((m) => m.email !== target);
+  saveStore();
+  res.json({ team });
+});
+
+app.delete('/api/teams/:id', requireAuth, (req, res) => {
+  const team = store.teams[req.params.id];
+  if (!team) return res.status(404).json({ error: 'Team not found' });
+  if (teamRole(team, req.auth.email) !== 'owner') return res.status(403).json({ error: 'Only the team owner can delete the team' });
+  delete store.teams[req.params.id];
+  // Orphaned team projects fall back to personal projects for their creator, rather than vanishing.
+  Object.values(store.projects).forEach((p) => { if (p.teamId === req.params.id) p.teamId = null; });
+  saveStore();
+  res.json({ ok: true });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Projects — real, server-side build history.                       */
+/*  Every generation is saved here (not just localStorage) so it's    */
+/*  available from any device once signed in, and can be shared with  */
+/*  a team by setting teamId to a team the user belongs to.           */
+/* ------------------------------------------------------------------ */
+function canAccessProject(project, email) {
+  if (project.ownerEmail === email) return true;
+  if (!project.teamId) return false;
+  const team = store.teams[project.teamId];
+  return !!team && team.members.some((m) => m.email === email);
+}
+
+app.get('/api/projects', requireAuth, (req, res) => {
+  const myTeamIds = new Set(teamsForEmail(req.auth.email).map((t) => t.id));
+  const mine = Object.values(store.projects).filter(
+    (p) => p.ownerEmail === req.auth.email || (p.teamId && myTeamIds.has(p.teamId)),
+  );
+  mine.sort((a, b) => b.updatedAt - a.updatedAt);
+  res.json({ projects: mine });
+});
+
+app.post('/api/projects', requireAuth, (req, res) => {
+  const body = req.body || {};
+  const id = String(body.id || '').trim() || ('proj_' + crypto.randomBytes(6).toString('hex'));
+  const existing = store.projects[id];
+  if (existing && !canAccessProject(existing, req.auth.email)) {
+    return res.status(403).json({ error: "You don't have access to this project" });
+  }
+  if (body.teamId) {
+    const team = store.teams[body.teamId];
+    if (!team || teamRole(team, req.auth.email) === null) {
+      return res.status(403).json({ error: "You're not a member of that team" });
+    }
+  }
+  const project = {
+    id,
+    ownerEmail: existing ? existing.ownerEmail : req.auth.email,
+    teamId: body.teamId || existing?.teamId || null,
+    name: String(body.name || existing?.name || 'Untitled project').slice(0, 120),
+    mode: body.mode || existing?.mode || 'website',
+    code: typeof body.code === 'string' ? body.code : (existing?.code || ''),
+    deployedUrl: body.deployedUrl !== undefined ? body.deployedUrl : (existing?.deployedUrl || null),
+    createdAt: existing?.createdAt || Date.now(),
+    updatedAt: Date.now(),
+  };
+  store.projects[id] = project;
+  saveStore();
+  res.json({ project });
+});
+
+app.delete('/api/projects/:id', requireAuth, (req, res) => {
+  const project = store.projects[req.params.id];
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (!canAccessProject(project, req.auth.email)) return res.status(403).json({ error: "You don't have access to this project" });
+  delete store.projects[req.params.id];
+  saveStore();
+  res.json({ ok: true });
+});
+
+/* ------------------------------------------------------------------ */
 /*  Code generation — OpenAI-compatible chat completions              */
 /*                                                                    */
 /*  Works with any OpenAI-style provider (Groq, OpenAI, OpenRouter,   */
@@ -328,7 +469,7 @@ function callProvider(cfg, system, user) {
 }
 
 /**
- * POST /api/generate-code
+ * POST /api/generate-code   (requires Authorization: Bearer <token>)
  * Body:    { prompt, projectId?, userId?, provider?, mode? }
  *   provider (optional) — a user-added model from Settings:
  *     { type: 'openai'|'anthropic'|'gemini', endpoint?, apiKey, model }
@@ -337,7 +478,7 @@ function callProvider(cfg, system, user) {
  *     instead of a website; anything else (or absent) generates a website.
  * Returns: { code: string }  — a complete HTML document
  */
-app.post('/api/generate-code', async (req, res) => {
+app.post('/api/generate-code', requireAuth, async (req, res) => {
   const { prompt, provider, mode } = req.body || {};
   if (!prompt || !prompt.trim()) {
     return res.status(400).json({ error: 'prompt is required' });
@@ -440,11 +581,11 @@ async function mirrorToGitHub(name, code) {
 }
 
 /**
- * POST /api/deploy-vercel
+ * POST /api/deploy-vercel   (requires Authorization: Bearer <token>)
  * Body:    { projectId?: string, userId?: string, code: string }
  * Returns: { url: string } — the live production URL (stable across updates)
  */
-app.post('/api/deploy-vercel', async (req, res) => {
+app.post('/api/deploy-vercel', requireAuth, async (req, res) => {
   const { projectId, code } = req.body || {};
   if (!code) {
     return res.status(400).json({ error: 'code is required' });
