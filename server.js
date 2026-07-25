@@ -732,6 +732,49 @@ app.post('/api/generate-code', requireAuth, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  Conversational chat — the Build Console answers normal messages    */
+/*  like a person (any language) instead of force-building a website. */
+/* ------------------------------------------------------------------ */
+const CHAT_SYSTEM_PROMPT = [
+  'You are Voide AI — the friendly assistant inside an AI website builder (like Replit/Bolt/Lovable).',
+  'The user is chatting with you, NOT asking for code right now.',
+  'Rules:',
+  '- ALWAYS reply in the SAME language/style the user wrote in (Hindi, English, Hinglish, anything).',
+  '- Be warm, natural and concise (2-5 sentences). No code, no HTML.',
+  '- If it fits naturally, end with one short line about what you can do: build complete websites & landing pages, build HTML5 canvas games, edit projects through follow-up messages, and deploy sites live in one click.',
+  '- If the user seems to describe a website idea, invite them to say "build it" / "bana do" and you will build it.',
+].join('\n');
+
+app.post('/api/chat', requireAuth, async (req, res) => {
+  const { message, history, provider } = req.body || {};
+  if (!message || !String(message).trim()) return res.status(400).json({ error: 'message is required' });
+
+  let cfg;
+  if (provider && provider.model && (provider.endpoint || provider.type === 'anthropic' || provider.type === 'gemini')) {
+    cfg = { type: provider.type || 'openai', endpoint: provider.endpoint || '', apiKey: provider.apiKey || '', model: provider.model };
+  } else if (process.env.GROQ_API_KEY) {
+    cfg = { type: 'openai', endpoint: 'https://api.groq.com/openai/v1', apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL };
+  } else {
+    return res.status(501).json({ error: 'no model configured' });
+  }
+
+  // Fold recent turns into the prompt so replies stay in context.
+  const turns = Array.isArray(history) ? history.slice(-10) : [];
+  const convo = turns.map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${String(t.content || '').slice(0, 500)}`).join('\n');
+  const userMsg = (convo ? `Conversation so far:\n${convo}\n\n` : '') + `User's new message: ${String(message).slice(0, 2000)}`;
+
+  try {
+    const raw = await callProvider(cfg, CHAT_SYSTEM_PROMPT, userMsg);
+    const reply = String(raw || '').trim().slice(0, 4000);
+    if (!reply) return res.status(502).json({ error: 'empty reply' });
+    res.json({ reply });
+  } catch (err) {
+    console.error('chat error:', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  Deploy — Vercel (publishes the generated HTML to a live URL)      */
 /*                                                                    */
 /*  Deploying with the SAME project name every time (derived from     */

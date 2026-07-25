@@ -72,6 +72,23 @@
       box-shadow: 0 0 0 4px rgba(99,102,241,.14), 0 20px 60px -20px rgba(99,102,241,.35);
     }
 
+    /* ---------- Mobile scrolling fixes ---------- */
+    /* Real viewport height on phones (URL bar collapse breaks 100vh) */
+    @supports (height: 100dvh) {
+      #view-workspace { height: calc(100dvh - 4rem) !important; }
+    }
+    /* Chat + logs must always be finger-scrollable on touch screens */
+    #chat-stream, #teamchat-log, #file-tree, .nice-scroll {
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      min-height: 0;
+    }
+    @media (max-width: 767px) {
+      /* The mobile Chat/Output switcher is ~3.75rem tall incl. margin */
+      #panel-chat, #panel-output { height: calc(100% - 3.75rem); }
+      body { overscroll-behavior-y: none; }
+    }
+
     /* ---------- Scrollbars ---------- */
     .nice-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
     .nice-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -604,6 +621,7 @@
         <button data-stab="apis" class="stab btn shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold">APIs</button>
         <button data-stab="secrets" class="stab btn shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold">Secrets</button>
         <button data-stab="team" class="stab btn shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold">Team</button>
+        <button data-stab="prefs" class="stab btn shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold">Prefs</button>
       </div>
 
       <!-- TAB: Models ------------------------------------------------ -->
@@ -752,45 +770,6 @@
           </span>
           <input id="pf-autodeploy" type="checkbox" class="h-5 w-5 accent-brand-500" />
         </label>
-        <label class="glass flex cursor-pointer items-center justify-between rounded-xl px-4 py-3">
-          <span>
-            <span class="block text-sm font-semibold text-white">Ask clarifying questions</span>
-            <span class="block text-xs text-slate-400">Interview me until the prompt is clear (95+) before building.</span>
-          </span>
-          <input id="pf-clarify" type="checkbox" class="h-5 w-5 accent-brand-500" />
-        </label>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============================================================ -->
-  <!-- CLARIFICATION MODAL (smart questions)                       -->
-  <!-- ============================================================ -->
-  <div id="clarify-modal" class="view-hidden fixed inset-0 z-50 grid place-items-center p-4">
-    <div id="clarify-backdrop" class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
-    <div class="glass-strong animate-pop relative w-full max-w-md rounded-2xl p-6">
-      <div class="mb-4">
-        <h3 class="text-lg font-bold text-white">Let me understand better</h3>
-        <p class="mt-1 text-sm text-slate-400">A few quick questions so I build exactly what you need</p>
-      </div>
-
-      <div id="clarify-content" class="space-y-3">
-        <!-- Questions inserted here -->
-      </div>
-
-      <div class="mt-5 flex gap-2">
-        <button id="btn-build-anyway" class="btn btn-primary flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white">Build Now</button>
-        <button id="btn-clarify-cancel" class="btn glass rounded-lg px-4 py-2.5 text-sm font-medium text-slate-200 hover:text-white">Cancel</button>
-      </div>
-
-      <div id="clarify-score" class="mt-4 rounded-lg border border-white/10 bg-black/30 p-3">
-        <div class="mb-2 flex items-center justify-between text-xs">
-          <span class="text-slate-400">Clarity score</span>
-          <span id="clarify-score-value" class="font-bold text-amber-300">0/100</span>
-        </div>
-        <div class="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-          <div id="clarify-score-bar" class="h-full w-0 rounded-full bg-gradient-to-r from-brand-500 to-accent-500 transition-all duration-300"></div>
-        </div>
       </div>
     </div>
   </div>
@@ -994,6 +973,7 @@
   // ---------- Configuration ----------
   const API = {
     generate: '/api/generate-code',
+    chat:     '/api/chat',
     deploy:   '/api/deploy-vercel',
     domain:   '/api/deploy-vercel/domain',
     projects: '/api/projects',
@@ -1025,6 +1005,7 @@
     busy: false,
     deployedUrl: null,
     activeTab: 'preview',
+    chatLog: [],            // running conversation for the open project (persisted per-project)
     projects: [],           // real build history — loaded from the server once signed in
     teams: [],               // teams the signed-in user belongs to
     activeTeamId: null,       // null = save new builds as personal projects
@@ -1088,14 +1069,6 @@
     deployLabelShort: $('#deploy-label-short'),
     deployIconRocket: $('#deploy-icon-rocket'),
     deployIconUpdate: $('#deploy-icon-update'),
-    // clarify modal
-    clarifyModal:     $('#clarify-modal'),
-    clarifyBackdrop:  $('#clarify-backdrop'),
-    clarifyContent:   $('#clarify-content'),
-    clarifyScore:     $('#clarify-score-value'),
-    clarifyScoreBar:  $('#clarify-score-bar'),
-    btnBuildAnyway:   $('#btn-build-anyway'),
-    btnClarifyCanel:  $('#btn-clarify-cancel'),
     // projects modal
     projectsModal:    $('#projects-modal'),
     projectsBackdrop: $('#projects-backdrop'),
@@ -1145,7 +1118,6 @@
     btnJoinTeam:      $('#btn-join-team'),
     pfThorough:       $('#pf-thorough'),
     pfAutodeploy:     $('#pf-autodeploy'),
-    pfClarify:        $('#pf-clarify'),
     // deploy settings
     dfVercelToken:    $('#df-vercel-token'),
     dfFirebaseId:     $('#df-firebase-id'),
@@ -1348,7 +1320,7 @@
   }
 
   // ---------- Chat / log rendering ----------
-  function addUserMessage(text) {
+  function addUserMessage(text, opts) {
     const wrap = document.createElement('div');
     wrap.className = 'log-line flex justify-end';
     wrap.innerHTML = `
@@ -1356,9 +1328,10 @@
     wrap.firstElementChild.textContent = text;
     el.chatStream.appendChild(wrap);
     scrollChat();
+    if (!opts || !opts.silent) recordChat('user', text);
   }
 
-  function addAssistantMessage(text) {
+  function addAssistantMessage(text, opts) {
     const wrap = document.createElement('div');
     wrap.className = 'log-line flex justify-start';
     wrap.innerHTML = `
@@ -1371,6 +1344,27 @@
     wrap.querySelector('.glass').textContent = text;
     el.chatStream.appendChild(wrap);
     scrollChat();
+    if (!opts || !opts.silent) recordChat('ai', text);
+  }
+
+  // ---------- Chat history: saved per-project in this browser ----------
+  function recordChat(role, text) {
+    state.chatLog.push({ role, text, ts: Date.now() });
+    if (state.chatLog.length > 120) state.chatLog = state.chatLog.slice(-120);
+    if (state.projectId) {
+      try { localStorage.setItem('aws_chat_' + state.projectId, JSON.stringify(state.chatLog)); } catch { /* storage full — skip */ }
+    }
+  }
+  function restoreChatLog(projectId) {
+    let log = [];
+    try { log = JSON.parse(localStorage.getItem('aws_chat_' + projectId) || '[]'); } catch { log = []; }
+    state.chatLog = Array.isArray(log) ? log : [];
+    el.chatStream.innerHTML = '';
+    for (const m of state.chatLog) {
+      if (m.role === 'user') addUserMessage(m.text, { silent: true });
+      else addAssistantMessage(m.text, { silent: true });
+    }
+    return state.chatLog.length;
   }
 
   function createLogBlock() {
@@ -1430,11 +1424,13 @@
     el.viewHero.classList.add('view-hidden');
     el.viewWorkspace.classList.remove('view-hidden');
     el.viewWorkspace.classList.add('flex', 'flex-col', 'md:flex-row');
+    document.body.style.overflow = ''; // never leave scroll locked by a stale modal
   }
   function showHero() {
     el.viewWorkspace.classList.add('view-hidden');
     el.viewHero.classList.remove('view-hidden');
     disconnectCollab();
+    document.body.style.overflow = '';
   }
 
   // ---------- Tabs (Preview / Code) ----------
@@ -2046,7 +2042,7 @@
     state.code = '';
     state.deployedUrl = null;
     state.attachments = [];
-    clarify = null; scoreNode = null;
+    state.chatLog = [];
     renderAttachments();
     renderFileTree();
     el.chatStream.innerHTML = '';
@@ -2158,14 +2154,16 @@
     state.activeTeamId = p.teamId || null;
     state.deployedUrl = p.deployedUrl || null;
     el.projectLabel.textContent = projectLabelText(p.id);
-    el.chatStream.innerHTML = '';
+    const restored = restoreChatLog(p.id); // bring back the saved conversation
     closeProjects();
     showWorkspace();
     setTab('preview');
     renderOutput(p.code, p.files);
     connectCollab(p.id);
     setBuildStatus('Ready', 'ok');
-    addAssistantMessage(`Reopened “${p.name}”. Tell me what you'd like to change.`);
+    addAssistantMessage(restored
+      ? `Reopened “${p.name}” — your chat history is right here. What next?`
+      : `Reopened “${p.name}”. Tell me what you'd like to change.`);
     if (window.innerWidth < 768) setMobilePanel('output');
   }
 
@@ -2762,7 +2760,6 @@
     renderSecrets();
     el.pfThorough.checked = !!state.prefs.thorough;
     el.pfAutodeploy.checked = !!state.prefs.autoDeploy;
-    el.pfClarify.checked = !!state.prefs.clarify;
     // Load deploy settings
     el.dfVercelToken.value = localStorage.getItem('aws_vercel_token') || '';
     el.dfFirebaseId.value = localStorage.getItem('aws_firebase_id') || '';
@@ -3728,181 +3725,72 @@ loop();
     scrollChat();
   }
 
-  // ---------- Prompt clarity score + clarification quiz ----------
-  const ASPECTS = [
-    { id: 'purpose', q: 'What is this site for? (Who is the user?)', options: ['Startup/SaaS', 'Portfolio', 'E-commerce', 'Community/Blog', 'Tool/App', 'Personal'], test: (p) => /(startup|saas|portfolio|shop|store|blog|community|tool|app|personal|company|business)/.test(p) },
-    { id: 'ui',      q: 'UI style preference?', options: ['Modern & minimal', 'Bold & colorful', 'Professional', 'Creative/Artistic', 'Retro/Nostalgic'], test: (p) => /(modern|minimal|bold|colou?rful|professional|creative|artistic|retro|nostalgic|minimal|dark|light|clean)/.test(p) },
-    { id: 'interact', q: 'Level of interactivity needed?', options: ['Static (fast load)', 'Moderate (some animations)', 'Highly interactive', 'Real-time (WebSocket)'], test: (p) => /(static|interact|anim|real-time|websocket|dynamic|live|scroll|hover|3d|canvas|game)/.test(p) },
-    { id: 'content', q: 'What\'s the main content?', options: ['Text-heavy', 'Image gallery', 'Video/Media', 'Mixed content', 'User-generated content'], test: (p) => /(text|image|video|media|content|gallery|user|generate)/.test(p) },
-    { id: 'action',  q: 'Primary user action?', options: ['View/Browse', 'Sign up', 'Purchase', 'Download', 'Connect/Contact', 'No CTA'], test: (p) => /(view|sign ?up|buy|purchase|download|contact|connect|share|follow|subscribe|action|cta)/.test(p) },
-  ];
+  /* ---------- Intent detection: is the user asking to BUILD, or just chatting? ----------
+   * Like Replit / Bolt / Lovable — a "hi, kaise ho?" gets a conversation, not a website.
+   * Build only when the message actually asks for one (any language / Hinglish). */
+  const BUILD_RE = /\b(build|create|make|design|develop|generate|code|website|web ?site|webpage|web ?page|landing ?page|portfolio|dashboard|storefront|e-?commerce|online ?store|blog|saas|app for|site for|game|banao|banau|bana(?:na|de|do|dijiye|iye)?|banwa|website chahiye|site chahiye)\b/i;
+  const CHAT_RE  = /^(hi+|hii+|hey+|hello+|yo|sup|salam|salaam|assalam\w*|namaste|namaskar|kaise ho|kese ho|kya haal|kya hal|how are you|what'?s up|good (morning|evening|night|afternoon)|thanks?|thank you|shukriya|dhanyavad|ok+|okay|accha|acha|theek|thik|nice|great|cool|who are you|tum kaun|tum kon|aap kaun|kya kar sakte|what can you do|help|madad)\b/i;
 
-  function scorePrompt(p, coveredCount) {
-    const total = ASPECTS.length;
-    const cov = (coveredCount != null) ? coveredCount : ASPECTS.filter((a) => a.test(p)).length;
-    let score = Math.round((cov / total) * 100);
-    if (p && p.trim().length > 220) score = Math.max(score, 92);
-    return Math.min(score, 100);
+  function detectIntent(text) {
+    const t = (text || '').trim();
+    if (!t) return 'chat';
+    // Explicit build words anywhere → build
+    if (BUILD_RE.test(t)) return 'build';
+    // Clear conversational opener and short → chat
+    if (CHAT_RE.test(t) && t.length < 120) return 'chat';
+    // Questions about the assistant / small talk (no build nouns) → chat
+    if (t.length < 40 && /\?$/.test(t)) return 'chat';
+    // Long descriptive text (a brief) → build; short vague text → chat
+    return t.length >= 60 ? 'build' : 'chat';
   }
 
-  let clarify = null;
-  let scoreNode = null;
-
-  function renderScoreBubble() {
-    const score = scorePrompt(clarify.prompt.toLowerCase(), clarify.covered.size);
-    if (!scoreNode) {
-      scoreNode = document.createElement('div');
-      scoreNode.className = 'log-line ml-9 rounded-xl border border-white/10 bg-black/25 px-3.5 py-2.5';
-      el.chatStream.appendChild(scoreNode);
-    }
-    const ok = score >= 95;
-    scoreNode.innerHTML = `
-      <div class="mb-1.5 flex items-center justify-between text-[11px]">
-        <span class="font-semibold text-slate-300">Prompt clarity</span>
-        <span class="font-bold ${ok ? 'text-emerald-300' : 'text-amber-300'}">${score}/100</span>
-      </div>
-      <div class="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-        <div class="score-fill h-full rounded-full ${ok ? 'bg-emerald-400' : 'bg-gradient-to-r from-brand-500 to-accent-500'}" style="width:${score}%"></div>
-      </div>
-      <div class="mt-1.5 text-[10px] text-slate-500">${ok ? 'Great — I have enough to build.' : 'Answer a couple more to reach 95+.'}</div>`;
-    scrollChat();
+  // Detect if the user wrote in Hindi/Hinglish so the fallback reply matches.
+  function isHindiish(t) {
+    return /[ऀ-ॿ]/.test(t) || /\b(hai|ha|nahi|kya|karo|kaise|kese|bhai|bro|yaar|yar|acha|accha|chahiye|banao|bata|karo|hoon|ho|mera|tera|aap|tum)\b/i.test(t);
   }
 
-  function addQuestionBlock(asp, onAnswer) {
-    const wrap = document.createElement('div');
-    wrap.className = 'log-line flex justify-start';
-    wrap.innerHTML = `
-      <div class="flex max-w-[92%] gap-2.5">
-        <span class="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-accent-500 text-white">
-          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 10h.01M12 10h.01M16 10h.01M21 12a8 8 0 0 1-11.5 7.2L3 21l1.8-6.5A8 8 0 1 1 21 12z"/></svg>
-        </span>
-        <div class="glass rounded-2xl rounded-tl-md px-4 py-3 text-sm text-slate-200">
-          <div class="q-text mb-2.5 font-medium"></div>
-          <div class="q-opts flex flex-wrap gap-2"></div>
-          <div class="mt-2.5 flex gap-2">
-            <input class="q-other min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-[13px] text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" placeholder="Or type your own…">
-            <button class="q-send btn btn-primary shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-white">Send</button>
-          </div>
-          <button class="q-skip mt-2 block text-[11px] text-slate-500 hover:text-slate-300">Skip · just build now →</button>
-        </div>
-      </div>`;
-    wrap.querySelector('.q-text').textContent = asp.q;
-    const opts = wrap.querySelector('.q-opts');
-    const picked = new Set();
-    const lock = () => wrap.querySelectorAll('button,input').forEach((x) => { x.disabled = true; });
+  const CAPABILITY_LINE_EN = "Here's what I can do for you: build complete websites & landing pages, make HTML5 canvas games, edit any project with follow-up messages, and deploy your site live with one click. Just describe what you want to build!";
+  const CAPABILITY_LINE_HI = "Main aapke liye ye kar sakta hoon: poori website / landing page bana sakta hoon, HTML5 canvas games bana sakta hoon, follow-up messages se koi bhi project edit kar sakta hoon, aur one-click me site live deploy kar sakta hoon. Bas batao kya banana hai!";
 
-    asp.options.forEach((o) => {
-      const b = document.createElement('button');
-      b.className = 'opt-chip rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-[12.5px] text-slate-300';
-      b.textContent = o;
-      b.addEventListener('click', () => {
-        if (asp.multi) {
-          if (picked.has(o)) { picked.delete(o); b.classList.remove('picked'); }
-          else { picked.add(o); b.classList.add('picked'); }
-        } else { lock(); onAnswer(o); }
+  function localChatReply(text) {
+    const hi = isHindiish(text);
+    const t = text.toLowerCase();
+    if (/thank|shukriya|dhanyavad/.test(t)) return hi ? 'Koi baat nahi! 😊 Kabhi bhi bulao. ' + CAPABILITY_LINE_HI : "You're welcome! 😊 " + CAPABILITY_LINE_EN;
+    if (/who are you|tum kaun|tum kon|aap kaun/.test(t)) return hi ? 'Main Voide AI hoon — aapka website-building assistant. ' + CAPABILITY_LINE_HI : "I'm Voide AI — your website-building assistant. " + CAPABILITY_LINE_EN;
+    if (/kaise ho|kese ho|kya haal|how are you/.test(t)) return hi ? 'Main bilkul theek hoon, shukriya! Aap batao — ' + CAPABILITY_LINE_HI : "I'm doing great, thanks for asking! " + CAPABILITY_LINE_EN;
+    return hi ? 'Hello! 👋 ' + CAPABILITY_LINE_HI : 'Hello! 👋 ' + CAPABILITY_LINE_EN;
+  }
+
+  // ---------- Conversational chat (no website build, no credits) ----------
+  async function runChat(text) {
+    if (state.busy) return;
+    state.busy = true;
+    el.btnGenerate.disabled = true;
+    el.btnRefine.disabled = true;
+
+    const think = addThinking('Reading your message…');
+    await pace(700);
+    setThinking(think, 'Thinking about the best answer…');
+
+    let reply = null;
+    try {
+      const res = await fetch(API.chat, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          message: text,
+          history: state.chatLog.slice(-10).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text })),
+          provider: activeModel() ? { type: activeModel().type || 'openai', endpoint: activeModel().endpoint, apiKey: activeModel().apiKey, model: activeModel().model } : undefined,
+        }),
       });
-      opts.appendChild(b);
-    });
+      if (res.ok) { const d = await res.json(); reply = d.reply || null; }
+    } catch { /* offline / no model — use the local reply below */ }
 
-    wrap.querySelector('.q-send').addEventListener('click', () => {
-      const other = wrap.querySelector('.q-other').value.trim();
-      const val = other || Array.from(picked).join(', ');
-      if (!val) { toast('Pick an option or type an answer', 'error'); return; }
-      lock();
-      onAnswer(val);
-    });
-    wrap.querySelector('.q-other').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); wrap.querySelector('.q-send').click(); }
-    });
-    wrap.querySelector('.q-skip').addEventListener('click', () => { lock(); finishClarify(); });
-
-    el.chatStream.appendChild(wrap);
-    scrollChat();
-  }
-
-  function startClarify(prompt, covered) {
-    clarify = { prompt, covered, answers: {}, queue: ASPECTS.filter((a) => !covered.has(a.id)) };
-    addAssistantMessage("Let me ask a few questions so I build exactly what you need.");
-    renderClarifyModal();
-  }
-
-  function renderClarifyModal() {
-    if (!clarify || clarify.queue.length === 0) { finishClarify(); return; }
-    const score = scorePrompt(clarify.prompt.toLowerCase(), clarify.covered.size);
-    el.clarifyScore.textContent = `${score}/100`;
-    el.clarifyScoreBar.style.width = `${score}%`;
-
-    el.clarifyContent.innerHTML = '';
-    const questionsToShow = clarify.queue.slice(0, 2); // Show 2 at a time
-
-    for (const asp of questionsToShow) {
-      const div = document.createElement('div');
-      div.className = 'rounded-lg border border-white/10 bg-black/30 p-3.5';
-      div.innerHTML = `<p class="mb-2.5 text-sm font-medium text-white">${asp.q}</p>`;
-
-      const optionsDiv = document.createElement('div');
-      optionsDiv.className = 'space-y-1.5 mb-2';
-
-      for (const opt of asp.options) {
-        const btn = document.createElement('button');
-        btn.className = 'btn glass w-full text-left rounded-lg px-3 py-1.5 text-sm text-slate-200 hover:bg-white/15';
-        btn.textContent = opt;
-        btn.addEventListener('click', () => handleClarifyAnswer(asp.id, opt));
-        optionsDiv.appendChild(btn);
-      }
-
-      div.appendChild(optionsDiv);
-
-      const customDiv = document.createElement('div');
-      customDiv.className = 'flex gap-1.5';
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.placeholder = 'Or type your own…';
-      input.className = 'flex-1 rounded-lg border border-white/10 bg-black/20 px-2.5 py-1 text-xs text-slate-100 placeholder-slate-600 outline-none focus:border-accent-400/60';
-      const btn = document.createElement('button');
-      btn.className = 'btn btn-primary shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium';
-      btn.textContent = 'OK';
-      btn.addEventListener('click', () => {
-        if (input.value.trim()) handleClarifyAnswer(asp.id, input.value.trim());
-      });
-      customDiv.appendChild(input);
-      customDiv.appendChild(btn);
-      div.appendChild(customDiv);
-
-      el.clarifyContent.appendChild(div);
-    }
-
-    el.clarifyModal.classList.remove('view-hidden');
-    document.body.style.overflow = 'hidden';
-  }
-
-  function handleClarifyAnswer(id, answer) {
-    clarify.answers[id] = answer;
-    clarify.covered.add(id);
-    clarify.queue = clarify.queue.filter(a => a.id !== id);
-    const score = scorePrompt(clarify.prompt.toLowerCase(), clarify.covered.size);
-    if (score >= 95 || clarify.queue.length === 0) {
-      closeClarifyModal();
-      finishClarify();
-    } else {
-      renderClarifyModal();
-    }
-  }
-
-  function closeClarifyModal() {
-    el.clarifyModal.classList.add('view-hidden');
-    document.body.style.overflow = '';
-  }
-
-  function finishClarify() {
-    if (!clarify) return;
-    const answers = clarify.answers;
-    const base = clarify.prompt;
-    const spec = Object.keys(answers).map((k) => `- ${k}: ${answers[k]}`).join('\n');
-    clarify = null; scoreNode = null;
-    const full = base + (spec ? `\n\nAdditional requirements:\n${spec}` : '');
-    addAssistantMessage('Perfect — building now. 🛠️ Watch the thinking process below.');
-    runBuild(full);
+    think.remove();
+    addAssistantMessage(reply || localChatReply(text));
+    state.busy = false;
+    el.btnGenerate.disabled = false;
+    el.btnRefine.disabled = false;
   }
 
   // ---------- Compose the final model prompt ----------
@@ -3948,14 +3836,22 @@ loop();
 
     const genPromise = apiGenerateCode(composeBuildPrompt(finalPrompt), state.projectMode); // start the real call now
 
-    const think = addThinking('Analyzing your requirements…');
+    // Deep-analysis phase — deliberate, step-by-step reasoning shown to the
+    // user (no instant flash answers; the model call runs in parallel).
+    const think = addThinking('Reading your message carefully…');
+    await pace(1100);
+    setThinking(think, 'Understanding what you really need…');
+    await pace(1100);
+    setThinking(think, 'Breaking the idea into sections & features…');
+    await pace(1000);
+    setThinking(think, 'Choosing layout, colors & typography…');
     await pace(1000);
 
-    setThinking(think, 'Designing the layout & structure…');
+    setThinking(think, 'Designing the structure…');
     addAssistantMessage("Here's my plan:");
     const pblock = createLogBlock();
-    for (const s of planFromPrompt(finalPrompt)) { addLogLine(pblock, s, 'ok'); await pace(180); }
-    await pace(600);
+    for (const s of planFromPrompt(finalPrompt)) { addLogLine(pblock, s, 'ok'); await pace(220); }
+    await pace(700);
 
     const steps = isCanvas ? [
       'Setting up the canvas & game loop…',
@@ -4038,37 +3934,42 @@ loop();
   }
   function setThinking(node, text) { if (node) node.querySelector('.think-text').textContent = text; scrollChat(); }
 
-  // ---------- Orchestrator: validate → (clarify) → build ----------
+  // ---------- Orchestrator: detect intent → chat OR deep-analysis build ----------
   function beginBuild(rawPrompt) {
     if (state.busy) return;
     const prompt = (rawPrompt || '').trim();
     if (!prompt) { toast('Describe what you want to build first ✍️', 'error'); el.heroPrompt.focus(); return; }
-    if (!usingOwnModel() && state.credits < GENERATION_COST) {
+
+    const intent = detectIntent(prompt);
+
+    // Credits only matter for actual builds — chatting is always free.
+    if (intent === 'build' && !usingOwnModel() && state.credits < GENERATION_COST) {
       toast(`Out of credits — ${CREDIT_REFILL} more free in ${daysToRefill()} day(s) ⏳`, 'error');
       return;
     }
 
+    const isNewProject = !state.projectId;
     state.projectId = state.projectId || pid();
-    state.projectName = prompt.slice(0, 42) + (prompt.length > 42 ? '…' : '');
-    state.projectMode = state.buildMode;
+    if (intent === 'build') {
+      state.projectName = prompt.slice(0, 42) + (prompt.length > 42 ? '…' : '');
+      state.projectMode = state.buildMode;
+    }
     el.projectLabel.textContent = projectLabelText(state.projectId);
 
     showWorkspace();
     connectCollab(state.projectId);
     setMobilePanel('chat');
     setTab('preview');
-    el.chatStream.innerHTML = '';
+    // Keep the running conversation — only a brand-new project starts clean.
+    if (isNewProject) { el.chatStream.innerHTML = ''; state.chatLog = []; }
 
     const n = state.attachments.length;
     addUserMessage(prompt + (n ? `  ·  📎 ${n} file${n > 1 ? 's' : ''}` : ''));
 
     const key = detectApiKey(prompt);
-    if (key) addSecretPromptBlock(key);
+    if (key) { addSecretPromptBlock(key); return; }
 
-    const covered = new Set(ASPECTS.filter((a) => a.test(prompt.toLowerCase())).map((a) => a.id));
-    const score = scorePrompt(prompt.toLowerCase(), covered.size);
-
-    if (state.prefs.clarify && score < 95) startClarify(prompt, covered);
+    if (intent === 'chat') runChat(prompt);
     else runBuild(prompt);
   }
 
@@ -4100,6 +4001,17 @@ loop();
     if (!v.trim()) return;
     const key = detectApiKey(v);
     if (key) { addUserMessage(v); addSecretPromptBlock(key); return; }
+    // Normal conversation in the build console gets a conversational answer —
+    // only edit/build requests touch the website code.
+    const editRe = /\b(change|add|remove|delete|update|fix|make|set|replace|swap|edit|badlo|badal|hatao|hata|jodo|jod|kar ?do|karo|lagao|laga|bana|colou?r|background|font|text|title|button|section|image|animation|dark|light|bigger|smaller|upar|neeche)\b/i;
+    if (state.code && !editRe.test(v) && detectIntent(v) === 'chat') { addUserMessage(v); runChat(v); return; }
+    if (!state.code) {
+      // Nothing built yet — chat chats, a build request starts a fresh build.
+      addUserMessage(v);
+      if (detectIntent(v) === 'chat') runChat(v);
+      else runBuild(v);
+      return;
+    }
     startRefinement(v);
   });
   el.refinePrompt.addEventListener('keydown', (e) => {
@@ -4195,7 +4107,6 @@ loop();
   // Preferences
   el.pfThorough.addEventListener('change', () => { state.prefs.thorough = el.pfThorough.checked; persistPrefs(); });
   el.pfAutodeploy.addEventListener('change', () => { state.prefs.autoDeploy = el.pfAutodeploy.checked; persistPrefs(); });
-  el.pfClarify.addEventListener('change', () => { state.prefs.clarify = el.pfClarify.checked; persistPrefs(); });
   // Deploy settings
   el.btnSaveDeploy.addEventListener('click', () => {
     localStorage.setItem('aws_vercel_token', el.dfVercelToken.value);
@@ -4225,18 +4136,6 @@ loop();
     el.btnCopyUrl.textContent = 'Copied!';
     setTimeout(() => { el.btnCopyUrl.textContent = 'Copy'; }, 1500);
   });
-  // Clarify modal handlers
-  el.btnBuildAnyway.addEventListener('click', () => {
-    closeClarifyModal();
-    finishClarify();
-  });
-  el.btnClarifyCanel.addEventListener('click', () => {
-    closeClarifyModal();
-    clarify = null;
-    scoreNode = null;
-  });
-  el.clarifyBackdrop.addEventListener('click', () => closeClarifyModal());
-
   // Vercel token handlers
   $('#btn-save-vercel-token').addEventListener('click', async () => {
     const token = el.vercelTokenInput.value.trim();
