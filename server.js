@@ -60,6 +60,56 @@ function loadStore() {
 }
 loadStore();
 
+/* ================================================================
+ *  Model Load Balancing — track active requests per model
+ *  If one model hits 40/40 capacity, route to next available
+ * ================================================================ */
+const modelQueues = new Map(); // model name → { active: count, max: 40 }
+
+function getAvailableModel(preferredModel) {
+  // If a preferred model is specified and has capacity, use it
+  if (preferredModel) {
+    if (!modelQueues.has(preferredModel)) {
+      modelQueues.set(preferredModel, { active: 0, max: 40 });
+    }
+    const q = modelQueues.get(preferredModel);
+    if (q.active < q.max) return preferredModel;
+  }
+
+  // Find the first model with available capacity, or use the one with least load
+  let bestModel = null;
+  let bestLoad = Infinity;
+
+  for (const [name, q] of modelQueues) {
+    if (q.active < q.max && q.active < bestLoad) {
+      bestModel = name;
+      bestLoad = q.active;
+    }
+  }
+
+  // If no models have capacity yet, initialize a new model (11th onwards)
+  if (!bestModel && modelQueues.size > 0) {
+    const modelNum = modelQueues.size + 1;
+    bestModel = `model-${modelNum}`;
+    modelQueues.set(bestModel, { active: 1, max: 40 });
+    return bestModel;
+  }
+
+  return bestModel || 'default';
+}
+
+function trackModelRequest(modelName, operation) {
+  if (!modelQueues.has(modelName)) {
+    modelQueues.set(modelName, { active: 0, max: 40 });
+  }
+  const q = modelQueues.get(modelName);
+  if (operation === 'start') {
+    q.active++;
+  } else if (operation === 'end') {
+    q.active = Math.max(0, q.active - 1);
+  }
+}
+
 // A short, permanent, random handle@domain — used for a user's personal
 // mailbox address and for a team's shareable join code. Never regenerated.
 function genHandle(domain) {
@@ -615,6 +665,7 @@ app.post('/api/generate-code', requireAuth, async (req, res) => {
 
   // Pick the provider: a user-supplied model wins, else server Groq.
   let cfg;
+  let modelName = 'default';
   if (provider && provider.model && (provider.endpoint || provider.type === 'anthropic' || provider.type === 'gemini')) {
     cfg = {
       type: provider.type || 'openai',
@@ -622,19 +673,32 @@ app.post('/api/generate-code', requireAuth, async (req, res) => {
       apiKey: provider.apiKey || '',
       model: provider.model,
     };
+    modelName = provider.model;
   } else if (process.env.GROQ_API_KEY) {
     cfg = { type: 'openai', endpoint: 'https://api.groq.com/openai/v1', apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL };
+    modelName = GROQ_MODEL;
   } else {
     return res.status(501).json({ error: 'no model configured — add one in Settings or set GROQ_API_KEY' });
   }
+
+  // Check model capacity and load balance
+  const availableModel = getAvailableModel(modelName);
+  if (!availableModel || (modelQueues.get(availableModel)?.active >= modelQueues.get(availableModel)?.max)) {
+    return res.status(503).json({ error: 'Our models are busy. Please try again in 1 to 3 minutes. Sorry!' });
+  }
+
+  trackModelRequest(availableModel, 'start');
 
   let raw;
   try {
     raw = await callProvider(cfg, systemPrompt, prompt);
   } catch (err) {
+    trackModelRequest(availableModel, 'end');
     console.error('generation error:', err.message, err.detail || '');
     return res.status(502).json({ error: err.detail ? `${err.message}: ${err.detail}` : err.message });
   }
+
+  trackModelRequest(availableModel, 'end');
 
   // Strip accidental markdown fences if the model added them.
   const code = String(raw || '').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
@@ -711,19 +775,21 @@ async function mirrorToGitHub(name, files) {
 
 /**
  * POST /api/deploy-vercel   (requires Authorization: Bearer <token>)
- * Body:    { projectId?: string, userId?: string, code: string, files?: object }
+ * Body:    { projectId?: string, userId?: string, code: string, files?: object, vercelToken?: string }
  *   files (optional) — a multi-file project { path: content }; when absent,
  *   falls back to a single index.html made from `code`.
+ *   vercelToken (optional) — user's own Vercel token for deployment to their account
  * Returns: { url: string } — the live production URL (stable across updates)
  */
 app.post('/api/deploy-vercel', requireAuth, async (req, res) => {
-  const { projectId, code, files } = req.body || {};
+  const { projectId, code, files, vercelToken } = req.body || {};
   const fileMap = files && typeof files === 'object' && Object.keys(files).length ? files : { 'index.html': code };
   if (!fileMap['index.html']) {
     return res.status(400).json({ error: 'code is required' });
   }
 
-  const token = process.env.VERCEL_TOKEN;
+  // Use user-provided token if available, otherwise fall back to server token
+  const token = vercelToken || process.env.VERCEL_TOKEN;
   if (!token) {
     return res.status(501).json({ error: 'VERCEL_TOKEN not configured' });
   }

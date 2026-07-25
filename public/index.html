@@ -600,9 +600,9 @@
       <!-- Tabs -->
       <div class="mb-4 flex gap-1 rounded-xl bg-black/25 p-1">
         <button data-stab="models" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Models</button>
+        <button data-stab="deploy" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Deploy</button>
         <button data-stab="secrets" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Secrets</button>
         <button data-stab="team" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Team</button>
-        <button data-stab="prefs" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Preferences</button>
       </div>
 
       <!-- TAB: Models ------------------------------------------------ -->
@@ -648,6 +648,29 @@
             <button id="btn-save-model" class="btn btn-primary flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white">Save Model</button>
             <button id="btn-cancel-model" class="btn glass rounded-xl px-4 py-2.5 text-sm font-medium text-slate-200 hover:text-white">Cancel</button>
           </div>
+        </div>
+      </div>
+
+      <!-- TAB: Deploy ----------------------------------------------------- -->
+      <div id="stab-deploy" class="view-hidden">
+        <p class="mb-3 text-sm text-slate-400">Connect your deployment and auth services.</p>
+
+        <div class="space-y-4">
+          <!-- Vercel Token -->
+          <div class="rounded-2xl border border-white/10 bg-black/25 p-4">
+            <label class="mb-2 block text-xs font-medium text-slate-400">Vercel API Token</label>
+            <input id="df-vercel-token" type="password" placeholder="paste your Vercel token…" autocomplete="off" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+            <p class="mt-2 text-[11px] text-slate-600">Get from <a href="https://vercel.com/account/tokens" target="_blank" class="text-brand-400 hover:text-brand-300">vercel.com/account/tokens</a> — enables live deployment to your own Vercel project.</p>
+          </div>
+
+          <!-- Firebase Config -->
+          <div class="rounded-2xl border border-white/10 bg-black/25 p-4">
+            <label class="mb-2 block text-xs font-medium text-slate-400">Firebase Project ID (Optional)</label>
+            <input id="df-firebase-id" type="text" placeholder="e.g. my-project-12345" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+            <p class="mt-2 text-[11px] text-slate-600">Enables Google Sign-in. You can also set this in environment variables.</p>
+          </div>
+
+          <button id="btn-save-deploy" class="btn btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white">Save Settings</button>
         </div>
       </div>
 
@@ -1031,6 +1054,10 @@
     pfThorough:       $('#pf-thorough'),
     pfAutodeploy:     $('#pf-autodeploy'),
     pfClarify:        $('#pf-clarify'),
+    // deploy settings
+    dfVercelToken:    $('#df-vercel-token'),
+    dfFirebaseId:     $('#df-firebase-id'),
+    btnSaveDeploy:    $('#btn-save-deploy'),
     // hero attach
     fileInput:        $('#file-input'),
     btnAttach:        $('#btn-attach'),
@@ -1594,7 +1621,9 @@
 
   async function apiDeploy() {
     if (!state.auth?.user) throw Object.assign(new Error('Sign in required'), { authRequired: true });
+    const vercelToken = localStorage.getItem('aws_vercel_token');
     const payload = { projectId: state.projectId, userId: state.userId, code: state.code, files: state.files };
+    if (vercelToken) payload.vercelToken = vercelToken;
     try {
       const res = await fetch(API.deploy, {
         method: 'POST',
@@ -2607,7 +2636,7 @@
   }
 
   function setSettingsTab(tab) {
-    ['models', 'secrets', 'team', 'prefs'].forEach((t) => {
+    ['models', 'deploy', 'secrets', 'team', 'prefs'].forEach((t) => {
       $('#stab-' + t).classList.toggle('view-hidden', t !== tab);
     });
     document.querySelectorAll('.stab').forEach((b) => {
@@ -2626,6 +2655,9 @@
     el.pfThorough.checked = !!state.prefs.thorough;
     el.pfAutodeploy.checked = !!state.prefs.autoDeploy;
     el.pfClarify.checked = !!state.prefs.clarify;
+    // Load deploy settings
+    el.dfVercelToken.value = localStorage.getItem('aws_vercel_token') || '';
+    el.dfFirebaseId.value = localStorage.getItem('aws_firebase_id') || '';
     setSettingsTab(tab || 'models');
     el.settingsModal.classList.remove('view-hidden');
     document.body.style.overflow = 'hidden';
@@ -3996,6 +4028,12 @@ loop();
   el.pfThorough.addEventListener('change', () => { state.prefs.thorough = el.pfThorough.checked; persistPrefs(); });
   el.pfAutodeploy.addEventListener('change', () => { state.prefs.autoDeploy = el.pfAutodeploy.checked; persistPrefs(); });
   el.pfClarify.addEventListener('change', () => { state.prefs.clarify = el.pfClarify.checked; persistPrefs(); });
+  // Deploy settings
+  el.btnSaveDeploy.addEventListener('click', () => {
+    localStorage.setItem('aws_vercel_token', el.dfVercelToken.value);
+    localStorage.setItem('aws_firebase_id', el.dfFirebaseId.value);
+    toast('Deployment settings saved!', 'success');
+  });
 
   // Modal
   el.btnCloseModal.addEventListener('click', closeModal);
