@@ -23,14 +23,14 @@ services:
       - key: GITHUB_OWNER
         sync: false
       - key: FIREBASE_PROJECT_ID
-        sync: false
+        value: voide-817de
       - key: FIREBASE_API_KEY
-        sync: false
+        value: AIzaSyBWRRPrgJhrFtXifgrvIU2qeleXaIEwrsw
       - key: FIREBASE_AUTH_DOMAIN
-        sync: false
+        value: voide-817de.firebaseapp.com
       - key: FIREBASE_APP_ID
-        sync: false
+        value: "1:114144022124:web:dfbd64b642f5b8b3bbd249"
       - key: FIREBASE_MESSAGING_SENDER_ID
-        sync: false
+        value: "114144022124"
     healthCheckPath: /
     autoDeploy: true
