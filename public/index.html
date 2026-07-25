@@ -227,6 +227,13 @@
         <span class="hidden lg:inline">Settings</span>
       </button>
 
+      <!-- Mailbox (team join requests) -->
+      <button id="btn-mailbox" class="btn glass relative flex shrink-0 items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="Your mailbox">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+        <span class="hidden md:inline">Mailbox</span>
+        <span id="mailbox-badge" class="view-hidden absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">0</span>
+      </button>
+
       <!-- Projects (history + new project) -->
       <button id="btn-projects" class="btn glass flex shrink-0 items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="Your projects">
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 8 4.5v9L12 20l-8-4.5v-9L12 2z"/><path d="m12 2 8 4.5-8 4.5-8-4.5L12 2z"/><path d="M12 11v9"/></svg>
@@ -648,11 +655,21 @@
         <p class="mb-3 text-sm text-slate-400">Create a team so multiple people can build and edit the same projects together.</p>
         <div id="teams-list" class="space-y-2"></div>
 
-        <div class="mt-4 flex gap-2">
-          <input id="tf-name" type="text" placeholder="Team name (e.g. Acme Studio)" class="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
-          <button id="btn-create-team" class="btn btn-primary shrink-0 rounded-lg px-4 py-2 text-sm font-semibold text-white">Create</button>
+        <div class="mt-4 space-y-2 rounded-2xl border border-white/10 bg-black/25 p-4">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Create a team</p>
+          <input id="tf-name" type="text" placeholder="Team name (e.g. Acme Studio)" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+          <input id="tf-desc" type="text" placeholder="What's the project? (short description)" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+          <button id="btn-create-team" class="btn btn-primary w-full rounded-lg px-4 py-2 text-sm font-semibold text-white">Create Team</button>
         </div>
-        <p class="mt-2 text-[11px] text-slate-600">Add teammates by email once a team is created — they'll see it next time they sign in with that address.</p>
+
+        <div class="mt-3 space-y-2 rounded-2xl border border-white/10 bg-black/25 p-4">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Join a team</p>
+          <div class="flex gap-2">
+            <input id="jf-code" type="text" placeholder="Team code (e.g. 9f3e21ab@voide.team)" class="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+            <button id="btn-join-team" class="btn glass shrink-0 rounded-lg px-4 py-2 text-sm font-semibold text-slate-200 hover:text-white">Request</button>
+          </div>
+          <p class="text-[11px] text-slate-600">The team owner gets your request in their Mailbox and approves it with one click.</p>
+        </div>
       </div>
 
       <!-- TAB: Preferences ------------------------------------------- -->
@@ -703,6 +720,30 @@
       </button>
 
       <div id="projects-list" class="space-y-2"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- MAILBOX MODAL (team join requests)                           -->
+  <!-- ============================================================ -->
+  <div id="mailbox-modal" class="view-hidden fixed inset-0 z-50 grid place-items-center p-4">
+    <div id="mailbox-backdrop" class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+    <div class="glass-strong animate-pop nice-scroll relative max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl p-5 sm:p-6">
+      <button id="btn-close-mailbox" class="btn absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" title="Close">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+
+      <div class="mb-1">
+        <h3 class="text-lg font-bold text-white">Your Mailbox</h3>
+        <p id="mailbox-address" class="mt-1 font-mono text-xs text-brand-300">—</p>
+      </div>
+      <p class="mb-4 text-sm text-slate-400">Team join requests land here — approve or deny with one click.</p>
+
+      <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Waiting for your action</p>
+      <div id="mailbox-incoming" class="mb-5 space-y-2"></div>
+
+      <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Your sent requests</p>
+      <div id="mailbox-sent" class="space-y-2"></div>
     </div>
   </div>
 
@@ -785,6 +826,7 @@
     deploy:   '/api/deploy-vercel',
     projects: '/api/projects',
     teams:    '/api/teams',
+    inbox:    '/api/inbox',
   };
   const GENERATION_COST = 1;   // credits per generation
   const CREDIT_REFILL   = 499; // free credits granted each cycle
@@ -812,6 +854,7 @@
     projects: [],           // real build history — loaded from the server once signed in
     teams: [],               // teams the signed-in user belongs to
     activeTeamId: null,       // null = save new builds as personal projects
+    mailbox: { address: null, incoming: [], sent: [] }, // team join requests
     models: JSON.parse(localStorage.getItem('aws_models') || '[]'),
     activeModelId: localStorage.getItem('aws_active_model') || null, // null = server default
     secrets: JSON.parse(localStorage.getItem('aws_secrets') || '[]'),
@@ -871,6 +914,14 @@
     projectsModal:    $('#projects-modal'),
     projectsBackdrop: $('#projects-backdrop'),
     projectsList:     $('#projects-list'),
+    // mailbox modal
+    btnMailbox:       $('#btn-mailbox'),
+    mailboxBadge:     $('#mailbox-badge'),
+    mailboxModal:     $('#mailbox-modal'),
+    mailboxBackdrop:  $('#mailbox-backdrop'),
+    mailboxAddress:   $('#mailbox-address'),
+    mailboxIncoming:  $('#mailbox-incoming'),
+    mailboxSent:      $('#mailbox-sent'),
     // settings / profile modal
     btnSettings:      $('#btn-settings'),
     settingsModal:    $('#settings-modal'),
@@ -889,7 +940,10 @@
     sfValue:          $('#sf-value'),
     teamsList:        $('#teams-list'),
     tfName:           $('#tf-name'),
+    tfDesc:           $('#tf-desc'),
     btnCreateTeam:    $('#btn-create-team'),
+    jfCode:           $('#jf-code'),
+    btnJoinTeam:      $('#btn-join-team'),
     pfThorough:       $('#pf-thorough'),
     pfAutodeploy:     $('#pf-autodeploy'),
     pfClarify:        $('#pf-clarify'),
@@ -1668,10 +1722,12 @@
 
   /* ============================================================
    *  TEAMS — real team formation.
-   *  Any signed-in user can create a team and add teammates by email;
-   *  every member can see and build on the team's shared projects.
+   *  Creating a team generates a permanent, random join code (looks
+   *  like an email — e.g. 9f3e21ab@voide.team). The creator is the
+   *  "leader" (owner). Anyone can request to join with that code; the
+   *  request lands in the owner's Mailbox with one-click Approve/Deny.
    *  Picking a team as "active" makes new builds save there instead
-   *  of to your personal history.
+   *  of to your personal history. Members can chat in a shared thread.
    * ============================================================ */
   async function fetchTeams() {
     if (!state.auth?.user) { state.teams = []; return; }
@@ -1686,19 +1742,20 @@
 
   async function createTeam() {
     const name = el.tfName.value.trim();
+    const description = el.tfDesc.value.trim();
     if (!name) return;
     el.btnCreateTeam.disabled = true;
     try {
       const res = await fetch(API.teams, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, description }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Could not create team');
       state.teams.unshift(data.team);
       state.activeTeamId = data.team.id;
-      el.tfName.value = '';
+      el.tfName.value = ''; el.tfDesc.value = '';
       renderTeams();
       toast(`Team “${data.team.name}” created 👥`, 'success');
     } catch (err) {
@@ -1708,18 +1765,39 @@
     }
   }
 
-  async function addTeamMember(teamId, email) {
+  async function joinTeamByCode() {
+    const code = el.jfCode.value.trim();
+    if (!code) return;
+    el.btnJoinTeam.disabled = true;
     try {
-      const res = await fetch(`${API.teams}/${encodeURIComponent(teamId)}/members`, {
+      const res = await fetch(`${API.teams}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ code }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Could not add member');
-      state.teams = state.teams.map((t) => (t.id === teamId ? data.team : t));
-      renderTeams();
-      toast(`Added ${email} to the team`, 'success');
+      if (!res.ok) throw new Error(data.error || 'Could not send join request');
+      el.jfCode.value = '';
+      toast(`Request sent to “${data.request.teamName}” — waiting for the owner to approve`, 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      el.btnJoinTeam.disabled = false;
+    }
+  }
+
+  async function sendTeamChat(teamId, text, onDone) {
+    try {
+      const res = await fetch(`${API.teams}/${encodeURIComponent(teamId)}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not send message');
+      const team = state.teams.find((t) => t.id === teamId);
+      if (team) { team.chat = team.chat || []; team.chat.push(data.message); }
+      onDone?.();
     } catch (err) {
       toast(err.message, 'error');
     }
@@ -1752,6 +1830,11 @@
     toast(teamId ? 'New builds will be saved to this team' : 'New builds will be saved to Personal');
   }
 
+  async function copyText(text, label) {
+    try { await navigator.clipboard.writeText(text); } catch {}
+    toast(`${label || 'Copied'} 📋`, 'success');
+  }
+
   function renderTeams() {
     el.teamsList.innerHTML = '';
     if (!state.teams.length) {
@@ -1762,6 +1845,7 @@
     state.teams.forEach((team) => {
       const isActive = state.activeTeamId === team.id;
       const isOwner = team.ownerEmail === me;
+      const chat = team.chat || [];
       const card = document.createElement('div');
       card.className = `rounded-xl border p-3.5 ${isActive ? 'border-brand-400/50 bg-brand-500/10' : 'border-white/10 bg-white/5'}`;
       card.innerHTML = `
@@ -1771,18 +1855,37 @@
               <span class="truncate text-sm font-semibold text-white"></span>
               ${isActive ? '<span class="shrink-0 rounded-full bg-brand-500/25 px-2 py-0.5 text-[10px] font-semibold text-brand-200">ACTIVE</span>' : ''}
             </div>
+            <div class="team-desc mt-0.5 text-[11px] text-slate-500"></div>
             <div class="mt-0.5 text-[11px] text-slate-500"></div>
           </div>
           <button class="team-pick btn glass shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:text-white">${isActive ? 'Use Personal' : 'Build here'}</button>
         </div>
+
+        <div class="mt-2.5 flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/25 px-2.5 py-1.5">
+          <svg class="h-3.5 w-3.5 shrink-0 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          <span class="team-code min-w-0 flex-1 truncate font-mono text-[11px] text-slate-300"></span>
+          <button class="team-copy-code shrink-0 text-[10px] font-semibold text-brand-300 hover:text-brand-200">Copy</button>
+        </div>
+
         <div class="team-members mt-3 space-y-1.5"></div>
-        ${isOwner ? `
-        <div class="mt-3 flex gap-2">
-          <input type="email" placeholder="teammate@email.com" class="team-invite-email flex-1 rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
-          <button class="team-invite-btn btn btn-primary shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-white">Add</button>
-        </div>` : ''}`;
+
+        <button class="team-chat-toggle mt-3 flex w-full items-center justify-between text-xs font-medium text-slate-400 hover:text-white">
+          <span>💬 Team chat (${chat.length})</span>
+          <span class="team-chat-caret">▾</span>
+        </button>
+        <div class="team-chat-panel view-hidden mt-2">
+          <div class="team-chat-log nice-scroll max-h-40 space-y-1.5 overflow-y-auto rounded-lg border border-white/10 bg-black/20 p-2.5"></div>
+          <div class="mt-1.5 flex gap-1.5">
+            <input type="text" placeholder="Message the team…" class="team-chat-input flex-1 rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+            <button class="team-chat-send btn btn-primary shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-white">Send</button>
+          </div>
+        </div>`;
       card.querySelector('.text-sm.font-semibold').textContent = team.name;
-      card.querySelector('.mt-0\\.5').textContent = `${team.members.length} member${team.members.length > 1 ? 's' : ''} · you're ${isOwner ? 'the owner' : 'a member'}`;
+      card.querySelector('.team-desc').textContent = team.description || '';
+      card.querySelector('.team-desc').classList.toggle('view-hidden', !team.description);
+      card.querySelectorAll('.mt-0\\.5')[1].textContent = `${team.members.length} member${team.members.length > 1 ? 's' : ''} · you're ${isOwner ? 'the leader' : 'a member'}`;
+      card.querySelector('.team-code').textContent = team.code;
+      card.querySelector('.team-copy-code').addEventListener('click', () => copyText(team.code, 'Team code copied'));
       card.querySelector('.team-pick').addEventListener('click', () => setActiveTeam(isActive ? null : team.id));
 
       const membersWrap = card.querySelector('.team-members');
@@ -1798,21 +1901,129 @@
         membersWrap.appendChild(row);
       });
 
-      if (isOwner) {
-        const emailInput = card.querySelector('.team-invite-email');
-        const inviteBtn = card.querySelector('.team-invite-btn');
-        const doInvite = () => {
-          const email = emailInput.value.trim();
-          if (!email) return;
-          addTeamMember(team.id, email);
-          emailInput.value = '';
-        };
-        inviteBtn.addEventListener('click', doInvite);
-        emailInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doInvite(); });
+      // Chat
+      const chatToggle = card.querySelector('.team-chat-toggle');
+      const chatPanel = card.querySelector('.team-chat-panel');
+      const chatCaret = card.querySelector('.team-chat-caret');
+      const chatLog = card.querySelector('.team-chat-log');
+      const chatInput = card.querySelector('.team-chat-input');
+      const chatSend = card.querySelector('.team-chat-send');
+      function paintChat() {
+        chatLog.innerHTML = (team.chat || []).length
+          ? (team.chat || []).map((m) => `
+            <div class="text-[11px]"><span class="font-semibold ${m.fromEmail === me ? 'text-brand-300' : 'text-slate-300'}">${m.fromEmail === me ? 'You' : m.fromEmail.split('@')[0]}:</span> <span class="text-slate-400">${m.text.replace(/</g, '&lt;')}</span></div>`).join('')
+          : '<p class="text-center text-[11px] text-slate-600">No messages yet</p>';
+        chatLog.scrollTop = chatLog.scrollHeight;
       }
+      chatToggle.addEventListener('click', () => {
+        const hidden = chatPanel.classList.toggle('view-hidden');
+        chatCaret.textContent = hidden ? '▾' : '▴';
+        if (!hidden) paintChat();
+      });
+      const doSend = () => {
+        const text = chatInput.value.trim();
+        if (!text) return;
+        chatInput.value = '';
+        sendTeamChat(team.id, text, () => {
+          chatToggle.querySelector('span').textContent = `💬 Team chat (${(team.chat || []).length})`;
+          paintChat();
+        });
+      };
+      chatSend.addEventListener('click', doSend);
+      chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSend(); });
 
       el.teamsList.appendChild(card);
     });
+  }
+
+  /* ============================================================
+   *  MAILBOX — every signed-in user gets one, permanent and
+   *  auto-generated. Team join requests you own land here with
+   *  one-click Approve/Deny; you can also track requests you've sent.
+   * ============================================================ */
+  async function fetchInbox() {
+    if (!state.auth?.user) { state.mailbox = { address: null, incoming: [], sent: [] }; return; }
+    try {
+      const res = await fetch(API.inbox, { headers: authHeaders() });
+      if (!res.ok) return;
+      state.mailbox = await res.json();
+    } catch { /* offline */ }
+    renderMailboxBadge();
+  }
+
+  function renderMailboxBadge() {
+    const n = (state.mailbox.incoming || []).filter((r) => r.status === 'pending').length;
+    el.mailboxBadge.textContent = n;
+    el.mailboxBadge.classList.toggle('view-hidden', n === 0);
+  }
+
+  function timeLeft(expiresAt) {
+    const ms = expiresAt - Date.now();
+    if (ms <= 0) return 'expired';
+    const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
+    return `${m}m ${s}s left`;
+  }
+
+  function renderMailbox() {
+    const incoming = state.mailbox.incoming || [];
+    const sent = state.mailbox.sent || [];
+
+    el.mailboxIncoming.innerHTML = incoming.length ? '' : '<p class="py-3 text-center text-sm text-slate-500">Nothing waiting for you right now.</p>';
+    incoming.forEach((r) => {
+      const card = document.createElement('div');
+      const pending = r.status === 'pending';
+      card.className = 'rounded-xl border border-white/10 bg-black/25 p-3.5';
+      card.innerHTML = `
+        <p class="text-sm text-slate-200"><b class="text-white">${r.fromEmail}</b> wants to join <b class="text-white">${r.teamName}</b></p>
+        ${pending ? `<p class="mt-1 font-mono text-[11px] text-brand-300">OTP ${r.otp} · <span class="expiry">${timeLeft(r.expiresAt)}</span></p>` : `<p class="mt-1 text-[11px] text-slate-500">${r.status}</p>`}
+        ${pending ? `
+        <div class="mt-2.5 flex gap-2">
+          <button class="req-approve btn btn-primary flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold text-white">Approve</button>
+          <button class="req-deny btn glass flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-white">Deny</button>
+        </div>` : ''}`;
+      if (pending) {
+        card.querySelector('.req-approve').addEventListener('click', () => resolveInboxItem(r.id, 'approve'));
+        card.querySelector('.req-deny').addEventListener('click', () => resolveInboxItem(r.id, 'deny'));
+      }
+      el.mailboxIncoming.appendChild(card);
+    });
+
+    el.mailboxSent.innerHTML = sent.length ? '' : '<p class="py-3 text-center text-sm text-slate-500">You haven\'t requested to join any team.</p>';
+    const statusColor = { pending: 'text-amber-300', approved: 'text-emerald-400', denied: 'text-rose-300', expired: 'text-slate-500' };
+    sent.forEach((r) => {
+      const row = document.createElement('div');
+      row.className = 'flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/20 px-3.5 py-2.5 text-sm';
+      row.innerHTML = `<span class="text-slate-300">${r.teamName}</span><span class="text-xs font-semibold ${statusColor[r.status] || 'text-slate-400'}">${r.status}</span>`;
+      el.mailboxSent.appendChild(row);
+    });
+  }
+
+  async function resolveInboxItem(id, action) {
+    try {
+      const res = await fetch(`${API.inbox}/${encodeURIComponent(id)}/${action}`, { method: 'POST', headers: authHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not update request');
+      toast(action === 'approve' ? 'Request approved 👥' : 'Request denied', 'success');
+      await fetchInbox();
+      renderMailbox();
+      fetchTeams(); // the approved member now shows up in the team's member list
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
+
+  async function openMailbox() {
+    el.mailboxIncoming.innerHTML = '<p class="py-3 text-center text-sm text-slate-500">Loading…</p>';
+    el.mailboxSent.innerHTML = '';
+    el.mailboxModal.classList.remove('view-hidden');
+    document.body.style.overflow = 'hidden';
+    await fetchInbox();
+    el.mailboxAddress.textContent = state.mailbox.address || '—';
+    renderMailbox();
+  }
+  function closeMailbox() {
+    el.mailboxModal.classList.add('view-hidden');
+    document.body.style.overflow = '';
   }
 
   /* ============================================================
@@ -2049,6 +2260,7 @@
           <div class="min-w-0 flex-1">
             <div class="truncate text-sm font-semibold text-white">${u.email}</div>
             <div class="text-[11px] text-emerald-300">● Signed in</div>
+            ${u.mailbox ? `<div class="mt-0.5 truncate font-mono text-[10px] text-slate-500">📬 ${u.mailbox}</div>` : ''}
           </div>
           <button id="btn-logout" class="btn glass shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-200 hover:text-white">Log out</button>
         </div>`;
@@ -2141,6 +2353,7 @@
       closeAuth();
       toast(`Welcome${authMode === 'signup' ? '' : ' back'}, ${data.user.email} 👋`, 'success');
       fetchTeams();
+      fetchInbox();
       runPendingAfterAuth();
     } catch (err) {
       authErr(err.message);
@@ -2155,6 +2368,8 @@
     state.projects = [];
     state.teams = [];
     state.activeTeamId = null;
+    state.mailbox = { address: null, incoming: [], sent: [] };
+    renderMailboxBadge();
     saveAuth();
     renderAccountButton();
     renderAccountCard();
@@ -2173,6 +2388,7 @@
         saveAuth();
         renderAccountButton();
         fetchTeams();
+        fetchInbox();
       }
     } catch { /* offline — keep the cached identity */ }
   }
@@ -2226,6 +2442,7 @@
       closeAuth();
       toast(`Welcome, ${data.user.email} 👋`, 'success');
       fetchTeams();
+      fetchInbox();
       runPendingAfterAuth();
     } catch (err) {
       const msg = err && err.code === 'auth/popup-closed-by-user' ? 'Sign-in cancelled' : (err.message || 'Google sign-in failed');
@@ -3289,6 +3506,9 @@ loop();
   el.btnDownload.addEventListener('click', downloadCode);
   el.btnDeploy.addEventListener('click', () => gate(startDeploy));
   el.btnProjects.addEventListener('click', () => gate(openProjects));
+  el.btnMailbox.addEventListener('click', () => gate(openMailbox));
+  el.mailboxBackdrop.addEventListener('click', closeMailbox);
+  $('#btn-close-mailbox').addEventListener('click', closeMailbox);
   el.btnHome.addEventListener('click', () => { if (!state.busy) showHero(); });
   el.btnRefresh.addEventListener('click', () => { if (state.code) el.iframe.srcdoc = state.code; });
 
@@ -3325,6 +3545,8 @@ loop();
   // Team
   el.btnCreateTeam.addEventListener('click', createTeam);
   el.tfName.addEventListener('keydown', (e) => { if (e.key === 'Enter') createTeam(); });
+  el.btnJoinTeam.addEventListener('click', joinTeamByCode);
+  el.jfCode.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinTeamByCode(); });
   // Preferences
   el.pfThorough.addEventListener('change', () => { state.prefs.thorough = el.pfThorough.checked; persistPrefs(); });
   el.pfAutodeploy.addEventListener('change', () => { state.prefs.autoDeploy = el.pfAutodeploy.checked; persistPrefs(); });
@@ -3342,7 +3564,7 @@ loop();
     el.btnCopyUrl.textContent = 'Copied!';
     setTimeout(() => { el.btnCopyUrl.textContent = 'Copy'; }, 1500);
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeProjects(); closeSettings(); closeAuth(); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeProjects(); closeSettings(); closeAuth(); closeMailbox(); } });
 
   // Credits badge — tap to see how many are left / when they refill
   el.planBadge.addEventListener('click', creditsInfo);

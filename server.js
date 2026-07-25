@@ -53,9 +53,20 @@ function loadStore() {
   if (!store.users) store.users = {};
   if (!store.teams) store.teams = {};
   if (!store.projects) store.projects = {};
+  if (!store.joinRequests) store.joinRequests = {};
   if (!store.secret) { store.secret = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex'); saveStore(); }
 }
 loadStore();
+
+// A short, permanent, random handle@domain — used for a user's personal
+// mailbox address and for a team's shareable join code. Never regenerated.
+function genHandle(domain) {
+  return crypto.randomBytes(4).toString('hex') + '@' + domain;
+}
+function ensureInbox(user) {
+  if (user && !user.inboxAddress) { user.inboxAddress = genHandle('voide.mail'); saveStore(); }
+  return user?.inboxAddress;
+}
 
 function hashPassword(password, salt) {
   salt = salt || crypto.randomBytes(16).toString('hex');
@@ -98,6 +109,7 @@ function requireAuth(req, res, next) {
   const p = verifyToken(bearer(req));
   if (!p || !p.email) return res.status(401).json({ error: 'Sign in required' });
   req.auth = p;
+  ensureInbox(store.users[p.email]);
   next();
 }
 
@@ -110,10 +122,11 @@ app.post('/api/auth/signup', (req, res) => {
 
   const { salt, hash } = hashPassword(password);
   const user = { id: 'user_' + crypto.randomBytes(6).toString('hex'), email, salt, hash, createdAt: Date.now() };
+  ensureInbox(user);
   store.users[email] = user;
   saveStore();
   const token = signToken({ uid: user.id, email, exp: Date.now() + TOKEN_TTL });
-  res.json({ token, user: { id: user.id, email } });
+  res.json({ token, user: { id: user.id, email, mailbox: user.inboxAddress } });
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -123,14 +136,16 @@ app.post('/api/auth/login', (req, res) => {
   if (!user || !verifyPassword(password, user.salt, user.hash)) {
     return res.status(401).json({ error: 'Wrong email or password' });
   }
+  ensureInbox(user);
   const token = signToken({ uid: user.id, email, exp: Date.now() + TOKEN_TTL });
-  res.json({ token, user: { id: user.id, email } });
+  res.json({ token, user: { id: user.id, email, mailbox: user.inboxAddress } });
 });
 
 app.get('/api/auth/me', (req, res) => {
   const p = verifyToken(bearer(req));
   if (!p) return res.status(401).json({ error: 'not authenticated' });
-  res.json({ user: { id: p.uid, email: p.email } });
+  const user = store.users[p.email];
+  res.json({ user: { id: p.uid, email: p.email, mailbox: ensureInbox(user) } });
 });
 
 /* ------------------------------------------------------------------ */
@@ -219,25 +234,37 @@ app.post('/api/auth/google', async (req, res) => {
   if (!user) {
     user = { id: 'user_' + crypto.randomBytes(6).toString('hex'), email, provider: 'google', createdAt: Date.now() };
     store.users[email] = user;
-    saveStore();
   }
+  ensureInbox(user);
+  saveStore();
   const token = signToken({ uid: user.id, email, exp: Date.now() + TOKEN_TTL });
-  res.json({ token, user: { id: user.id, email } });
+  res.json({ token, user: { id: user.id, email, mailbox: user.inboxAddress } });
 });
 
 /* ------------------------------------------------------------------ */
-/*  Teams — real, minimal team formation.                             */
-/*  A team is a name + a list of member emails. The owner adds        */
-/*  teammates by email (added instantly — there's no email server,    */
-/*  so it's "add", not a pending invite); any member can see and      */
-/*  build on the team's shared projects.                              */
+/*  Teams — real team formation.                                      */
+/*  Creating a team generates a permanent, random join code (looks     */
+/*  like an email — e.g. 9f3e21ab@voide.team). The creator is the      */
+/*  "leader" (owner). Anyone can request to join with that code; the   */
+/*  request lands in the owner's personal mailbox with a 10-minute     */
+/*  OTP for reference and one-click Approve/Deny. Members can chat in  */
+/*  a simple shared team thread.                                      */
 /* ------------------------------------------------------------------ */
 function teamsForEmail(email) {
-  return Object.values(store.teams).filter((t) => t.members.some((m) => m.email === email));
+  return Object.values(store.teams)
+    .filter((t) => t.members.some((m) => m.email === email))
+    .map(backfillTeam);
 }
 function teamRole(team, email) {
   const m = team.members.find((m) => m.email === email);
   return m ? m.role : null;
+}
+// Defensive backfill for teams created before code/description/chat existed.
+function backfillTeam(team) {
+  if (!team.code) team.code = genHandle('voide.team');
+  if (!team.chat) team.chat = [];
+  if (team.description === undefined) team.description = '';
+  return team;
 }
 
 app.get('/api/teams', requireAuth, (req, res) => {
@@ -246,29 +273,20 @@ app.get('/api/teams', requireAuth, (req, res) => {
 
 app.post('/api/teams', requireAuth, (req, res) => {
   const name = String((req.body || {}).name || '').trim().slice(0, 60);
+  const description = String((req.body || {}).description || '').trim().slice(0, 240);
   if (!name) return res.status(400).json({ error: 'Team name is required' });
   const team = {
     id: 'team_' + crypto.randomBytes(6).toString('hex'),
     name,
+    description,
+    code: genHandle('voide.team'),
     ownerEmail: req.auth.email,
     members: [{ email: req.auth.email, role: 'owner' }],
+    chat: [],
     createdAt: Date.now(),
   };
   store.teams[team.id] = team;
   saveStore();
-  res.json({ team });
-});
-
-app.post('/api/teams/:id/members', requireAuth, (req, res) => {
-  const team = store.teams[req.params.id];
-  if (!team) return res.status(404).json({ error: 'Team not found' });
-  if (teamRole(team, req.auth.email) !== 'owner') return res.status(403).json({ error: 'Only the team owner can add members' });
-  const email = String((req.body || {}).email || '').trim().toLowerCase();
-  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Please enter a valid email' });
-  if (!team.members.some((m) => m.email === email)) {
-    team.members.push({ email, role: 'member' });
-    saveStore();
-  }
   res.json({ team });
 });
 
@@ -281,7 +299,7 @@ app.delete('/api/teams/:id/members/:email', requireAuth, (req, res) => {
   if (target === team.ownerEmail) return res.status(400).json({ error: "Can't remove the team owner" });
   team.members = team.members.filter((m) => m.email !== target);
   saveStore();
-  res.json({ team });
+  res.json({ team: backfillTeam(team) });
 });
 
 app.delete('/api/teams/:id', requireAuth, (req, res) => {
@@ -294,6 +312,100 @@ app.delete('/api/teams/:id', requireAuth, (req, res) => {
   saveStore();
   res.json({ ok: true });
 });
+
+// Team group chat — any member can post; returns the last 200 messages.
+app.post('/api/teams/:id/chat', requireAuth, (req, res) => {
+  const team = store.teams[req.params.id];
+  if (!team) return res.status(404).json({ error: 'Team not found' });
+  if (teamRole(team, req.auth.email) === null) return res.status(403).json({ error: "You're not a member of this team" });
+  const text = String((req.body || {}).text || '').trim().slice(0, 500);
+  if (!text) return res.status(400).json({ error: 'Message is empty' });
+  backfillTeam(team);
+  const message = { id: 'msg_' + crypto.randomBytes(4).toString('hex'), fromEmail: req.auth.email, text, createdAt: Date.now() };
+  team.chat.push(message);
+  if (team.chat.length > 200) team.chat = team.chat.slice(-200);
+  saveStore();
+  res.json({ message });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Mailbox — every signed-in user gets one, permanent, auto-generated */
+/*  (e.g. a1b2c3d4@voide.mail). It's where join requests for teams you */
+/*  own land (with a 10-minute reference OTP + one-click Approve/Deny) */
+/*  and where you can track the status of requests you've sent.       */
+/* ------------------------------------------------------------------ */
+const JOIN_REQUEST_TTL = 10 * 60 * 1000; // 10 minutes
+
+function liveStatus(r) {
+  if (r.status === 'pending' && Date.now() > r.expiresAt) return 'expired';
+  return r.status;
+}
+
+app.get('/api/inbox', requireAuth, (req, res) => {
+  const me = req.auth.email;
+  const incoming = Object.values(store.joinRequests)
+    .filter((r) => r.toEmail === me)
+    .map((r) => ({ ...r, status: liveStatus(r) }))
+    .sort((a, b) => b.createdAt - a.createdAt);
+  const sent = Object.values(store.joinRequests)
+    .filter((r) => r.fromEmail === me)
+    .map((r) => ({ ...r, otp: undefined })) // the OTP is only ever shown to the owner who has to act on it
+    .map((r) => ({ ...r, status: liveStatus(r) }))
+    .sort((a, b) => b.createdAt - a.createdAt);
+  res.json({ address: ensureInbox(store.users[me]), incoming, sent });
+});
+
+// Request to join a team by its code — creates a 10-min OTP'd request in
+// the owner's mailbox. Idempotent: re-using the same code while a request
+// is already pending just returns that same request.
+app.post('/api/teams/join', requireAuth, (req, res) => {
+  const code = String((req.body || {}).code || '').trim().toLowerCase();
+  if (!code) return res.status(400).json({ error: 'Enter a team code' });
+  const team = Object.values(store.teams).find((t) => backfillTeam(t).code === code);
+  if (!team) return res.status(404).json({ error: 'No team found with that code' });
+  if (teamRole(team, req.auth.email) !== null) return res.status(400).json({ error: "You're already a member of this team" });
+
+  const existing = Object.values(store.joinRequests).find(
+    (r) => r.teamId === team.id && r.fromEmail === req.auth.email && liveStatus(r) === 'pending',
+  );
+  if (existing) return res.json({ request: { ...existing, otp: undefined } });
+
+  const request = {
+    id: 'req_' + crypto.randomBytes(6).toString('hex'),
+    teamId: team.id,
+    teamName: team.name,
+    fromEmail: req.auth.email,
+    toEmail: team.ownerEmail,
+    otp: String(crypto.randomInt(100000, 999999)),
+    status: 'pending',
+    createdAt: Date.now(),
+    expiresAt: Date.now() + JOIN_REQUEST_TTL,
+  };
+  store.joinRequests[request.id] = request;
+  saveStore();
+  res.json({ request: { ...request, otp: undefined } });
+});
+
+function resolveJoinRequest(req, res, decision) {
+  const request = store.joinRequests[req.params.id];
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  if (request.toEmail !== req.auth.email) return res.status(403).json({ error: 'Not your request to resolve' });
+  if (liveStatus(request) !== 'pending') return res.status(400).json({ error: `This request is already ${liveStatus(request)}` });
+
+  request.status = decision;
+  request.resolvedAt = Date.now();
+  if (decision === 'approved') {
+    const team = store.teams[request.teamId];
+    if (!team) return res.status(404).json({ error: 'That team no longer exists' });
+    if (!team.members.some((m) => m.email === request.fromEmail)) {
+      team.members.push({ email: request.fromEmail, role: 'member' });
+    }
+  }
+  saveStore();
+  res.json({ request });
+}
+app.post('/api/inbox/:id/approve', requireAuth, (req, res) => resolveJoinRequest(req, res, 'approved'));
+app.post('/api/inbox/:id/deny', requireAuth, (req, res) => resolveJoinRequest(req, res, 'denied'));
 
 /* ------------------------------------------------------------------ */
 /*  Projects — real, server-side build history.                       */

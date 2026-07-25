@@ -26,7 +26,7 @@ A white-label, single-page **AI Website Builder** — dark theme, glassmorphism,
 - **File upload** — attach images, 3D models (`.glb/.gltf`), video or assets to a prompt (great for 3D/animated sites; CDN libraries like three.js/GSAP are allowed for those builds).
 - **Sign in / Sign up required** — real email + password accounts (server-side, scrypt-hashed, signed session tokens). Generating, deploying, downloading, Settings and Projects are all gated behind sign-in — the hero and template gallery are browsable, but the moment you hit **Generate App** (or any other real action) while signed out, sign-in opens with a benefits list and the app **automatically continues your build the instant you're signed in**.
 - **Real, server-side build history** — every project is saved to your account (`data/users.json`), not just the browser — sign in on any device and your projects, team memberships and Team Studio content are exactly as you left them.
-- **Teams** — create a team in **Settings → Team** and add teammates by email; everyone on the team can see, reopen and edit the team's shared projects. Pick "Build here" on a team to save your next builds there instead of to your personal history — the Build Console and Projects list always show which team (if any) a project belongs to.
+- **Teams, with a real mailbox** — every signed-in user gets a permanent, auto-generated mailbox address (e.g. `a1b2c3d4@voide.mail`). Create a team in **Settings → Team** (name + a short project description) and it gets its own permanent, random join code (e.g. `9f3e21ab@voide.team`) — the team's "leader" is whoever created it. Anyone can paste that code into **Join a team** to request access; the request lands in the leader's **Mailbox** (header button, with a badge for pending requests) with a 10-minute reference OTP and one-click **Approve/Deny** — no typing codes back and forth. Approved members can see, reopen and edit the team's shared projects, chat in a simple per-team thread, and pick "Build here" so their next builds save to the team instead of their personal history.
 - **Fully mobile friendly** — the header collapses to compact icon buttons, and below `768px` the workspace becomes a Chat / Output switcher.
 
 ## API contract
@@ -46,11 +46,15 @@ POST   /api/deploy-vercel   { projectId, code }                       →  { url
 GET    /api/projects        →  { projects: [...] }         (yours + any team's)
 POST   /api/projects        { id?, name, mode, code, deployedUrl?, teamId? }  →  { project }
 DELETE /api/projects/:id    →  { ok: true }
-GET    /api/teams           →  { teams: [...] }             (teams you belong to)
-POST   /api/teams           { name }                        →  { team }
-POST   /api/teams/:id/members       { email }                →  { team }   (owner only)
+GET    /api/teams           →  { teams: [...] }             (teams you belong to; each has code, description, members, chat)
+POST   /api/teams           { name, description? }          →  { team }   (generates a permanent random join code)
+POST   /api/teams/join      { code }                        →  { request }  (creates a 10-min OTP request in the owner's mailbox)
 DELETE /api/teams/:id/members/:email →  { team }             (owner, or leave yourself)
 DELETE /api/teams/:id       →  { ok: true }                  (owner only)
+POST   /api/teams/:id/chat  { text }                         →  { message }  (member only)
+GET    /api/inbox           →  { address, incoming: [...], sent: [...] }  (your mailbox)
+POST   /api/inbox/:id/approve →  { request }                 (one-click — adds the requester to the team)
+POST   /api/inbox/:id/deny    →  { request }
 ```
 
 ## Accounts (sign in / sign up)
