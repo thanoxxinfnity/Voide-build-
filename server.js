@@ -580,9 +580,24 @@ const CANVAS_SYSTEM_PROMPT = [
 ].join('\n');
 
 function providerError(status, detail) {
-  const err = new Error(`provider responded ${status}`);
+  const detailStr = String(detail || '');
+  let message = `provider responded ${status}`;
+
+  // Handle rate limit (429) with friendly error
+  if (status === 429) {
+    // Try to extract retry time from Groq error message
+    const retryMatch = detailStr.match(/try again in (\d+[hms]+)/i);
+    const retryTime = retryMatch ? retryMatch[1] : '1-2 hours';
+    message = `API rate limit reached. Rate limits reset in ${retryTime}. Try switching to a custom model in Settings → Models (OpenAI, Claude, Gemini) or wait for the limit to reset.`;
+  } else if (status === 401 || status === 403) {
+    message = 'API key invalid or unauthorized. Check your model settings and API key.';
+  } else if (status === 500 || status === 502 || status === 503) {
+    message = 'API server error. Please try again in a few moments.';
+  }
+
+  const err = new Error(message);
   err.status = status;
-  err.detail = String(detail || '').slice(0, 300);
+  err.detail = detailStr.slice(0, 500);
   return err;
 }
 
