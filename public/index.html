@@ -598,11 +598,12 @@
       <div id="account-card" class="mb-4"></div>
 
       <!-- Tabs -->
-      <div class="mb-4 flex gap-1 rounded-xl bg-black/25 p-1">
-        <button data-stab="models" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Models</button>
-        <button data-stab="deploy" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Deploy</button>
-        <button data-stab="secrets" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Secrets</button>
-        <button data-stab="team" class="stab btn flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold">Team</button>
+      <div class="mb-4 flex gap-1 rounded-xl bg-black/25 p-1 overflow-x-auto">
+        <button data-stab="models" class="stab btn shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold">Models</button>
+        <button data-stab="deploy" class="stab btn shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold">Deploy</button>
+        <button data-stab="apis" class="stab btn shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold">APIs</button>
+        <button data-stab="secrets" class="stab btn shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold">Secrets</button>
+        <button data-stab="team" class="stab btn shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold">Team</button>
       </div>
 
       <!-- TAB: Models ------------------------------------------------ -->
@@ -671,6 +672,32 @@
           </div>
 
           <button id="btn-save-deploy" class="btn btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white">Save Settings</button>
+        </div>
+      </div>
+
+      <!-- TAB: APIs ---------------------------------------------------- -->
+      <div id="stab-apis" class="view-hidden">
+        <p class="mb-3 text-sm text-slate-400">Custom API endpoints for video generation & 3D animation.</p>
+
+        <div class="space-y-4">
+          <!-- Video API -->
+          <div class="rounded-2xl border border-white/10 bg-black/25 p-4">
+            <label class="mb-2 block text-xs font-medium text-slate-400">Video Generation API</label>
+            <input id="api-video-endpoint" type="text" placeholder="https://api.example.com/generate-video" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+            <input id="api-video-key" type="password" placeholder="API key (optional)" autocomplete="off" class="mt-2 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+            <p class="mt-2 text-[11px] text-slate-600">For generating video content and animated website backgrounds.</p>
+          </div>
+
+          <!-- 3D API -->
+          <div class="rounded-2xl border border-white/10 bg-black/25 p-4">
+            <label class="mb-2 block text-xs font-medium text-slate-400">3D Animation API</label>
+            <input id="api-3d-endpoint" type="text" placeholder="https://api.example.com/generate-3d" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+            <input id="api-3d-key" type="password" placeholder="API key (optional)" autocomplete="off" class="mt-2 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+            <p class="mt-2 text-[11px] text-slate-600">For 3D models, Three.js animation, and interactive experiences.</p>
+          </div>
+
+          <button id="btn-save-apis" class="btn btn-primary w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white">Save API Settings</button>
+          <p class="text-[11px] text-slate-600">Leave empty to use built-in features. Custom APIs will be used if provided during generation.</p>
         </div>
       </div>
 
@@ -889,6 +916,32 @@
         <p id="deploy-error-msg" class="mt-1.5 text-sm text-slate-400">Something went wrong while publishing your site.</p>
         <button id="btn-retry-deploy" class="btn btn-primary mt-5 rounded-xl px-5 py-2.5 text-sm font-semibold text-white">Try Again</button>
       </div>
+
+      <!-- State: need Vercel token -->
+      <div id="deploy-state-token" class="view-hidden flex flex-col py-2">
+        <div class="mb-4 flex items-center gap-3">
+          <div class="grid h-12 w-12 place-items-center rounded-full bg-accent-500/15">
+            <svg class="h-6 w-6 text-accent-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div class="min-w-0">
+            <h3 class="text-lg font-bold text-white">Add Vercel Token</h3>
+            <p class="text-xs text-slate-400">Required for deployment</p>
+          </div>
+        </div>
+        <div class="space-y-3">
+          <div>
+            <label class="mb-1.5 block text-xs font-medium text-slate-400">Vercel Access Token</label>
+            <input id="vercel-token-input" type="password" placeholder="paste your token…" autocomplete="off" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-accent-400/60" />
+            <p class="mt-1.5 text-[11px] text-slate-600">
+              Get one from <a href="https://vercel.com/account/tokens" target="_blank" rel="noopener" class="text-accent-400 hover:text-accent-300">vercel.com/account/tokens</a> (create one, copy-paste here)
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <button id="btn-save-vercel-token" class="btn btn-primary flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white">Save & Deploy</button>
+            <button id="btn-cancel-token" class="btn glass rounded-lg px-4 py-2.5 text-sm font-medium text-slate-200 hover:text-white">Cancel</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1058,6 +1111,12 @@
     dfVercelToken:    $('#df-vercel-token'),
     dfFirebaseId:     $('#df-firebase-id'),
     btnSaveDeploy:    $('#btn-save-deploy'),
+    // api settings
+    apiVideoEndpoint: $('#api-video-endpoint'),
+    apiVideoKey:      $('#api-video-key'),
+    api3dEndpoint:    $('#api-3d-endpoint'),
+    api3dKey:         $('#api-3d-key'),
+    btnSaveApis:      $('#btn-save-apis'),
     // hero attach
     fileInput:        $('#file-input'),
     btnAttach:        $('#btn-attach'),
@@ -1084,9 +1143,11 @@
     stLoading:     $('#deploy-state-loading'),
     stSuccess:     $('#deploy-state-success'),
     stError:       $('#deploy-state-error'),
+    stToken:       $('#deploy-state-token'),
     deployStep:    $('#deploy-step'),
     deployUrl:     $('#deploy-url'),
     deployErrMsg:  $('#deploy-error-msg'),
+    vercelTokenInput: $('#vercel-token-input'),
     btnCloseModal: $('#btn-close-modal'),
     btnDoneModal:  $('#btn-done-modal'),
     btnVisit:      $('#btn-visit-site'),
@@ -1611,11 +1672,8 @@
       return { code, source: 'api' };
     } catch (err) {
       if (err.authRequired) throw err;
-      console.warn('[AI Web Studio] Falling back to local engine:', err.message);
-      // If the user picked a custom model, tell them why it didn't run.
-      if (model) toast(`“${model.label}” failed: ${err.message}`.slice(0, 120), 'error');
-      await new Promise((r) => setTimeout(r, 600));
-      return { code: mockGenerate(prompt, mode), source: 'mock' };
+      console.error('[AI Web Studio] Generation failed:', err.message);
+      throw err; // Real production mode - don't fall back to mock
     }
   }
 
@@ -1637,9 +1695,12 @@
       return { url: data.url, source: 'api' };
     } catch (err) {
       if (err.authRequired) throw err;
-      console.warn('[AI Web Studio] Deploy falling back to demo URL:', err.message);
-      await new Promise((r) => setTimeout(r, 2400));
-      return { url: `https://${state.projectId.replace('proj_', 'site-')}.aiwebstudio.app`, source: 'mock' };
+      // If no Vercel token set, prompt user to add it
+      const hasToken = localStorage.getItem('aws_vercel_token');
+      if (!hasToken && err.message.includes('VERCEL_TOKEN not configured')) {
+        throw Object.assign(new Error('Add your Vercel token in Settings → Deploy to enable live deployment'), { needsToken: true });
+      }
+      throw err; // Real production mode - require proper deployment
     }
   }
 
@@ -1760,6 +1821,7 @@
     el.stLoading.classList.toggle('view-hidden', which !== 'loading');
     el.stSuccess.classList.toggle('view-hidden', which !== 'success');
     el.stError.classList.toggle('view-hidden', which !== 'error');
+    el.stToken.classList.toggle('view-hidden', which !== 'token');
   }
 
   async function startDeploy() {
@@ -1791,6 +1853,13 @@
       toast(`${wasLive ? 'Update' : 'Deployment'} successful 🚀`, 'success');
     } catch (err) {
       clearInterval(deployStepTimer);
+      // If error needs Vercel token, show token input instead of error
+      if (err.needsToken) {
+        el.vercelTokenInput.value = '';
+        el.vercelTokenInput.focus();
+        setModalState('token');
+        return;
+      }
       el.deployErrMsg.textContent = err.message || 'Something went wrong while publishing your site.';
       setModalState('error');
       toast('Deployment failed', 'error');
@@ -2636,7 +2705,7 @@
   }
 
   function setSettingsTab(tab) {
-    ['models', 'deploy', 'secrets', 'team', 'prefs'].forEach((t) => {
+    ['models', 'deploy', 'apis', 'secrets', 'team', 'prefs'].forEach((t) => {
       $('#stab-' + t).classList.toggle('view-hidden', t !== tab);
     });
     document.querySelectorAll('.stab').forEach((b) => {
@@ -2658,6 +2727,11 @@
     // Load deploy settings
     el.dfVercelToken.value = localStorage.getItem('aws_vercel_token') || '';
     el.dfFirebaseId.value = localStorage.getItem('aws_firebase_id') || '';
+    // Load API settings
+    el.apiVideoEndpoint.value = localStorage.getItem('aws_api_video_endpoint') || '';
+    el.apiVideoKey.value = localStorage.getItem('aws_api_video_key') || '';
+    el.api3dEndpoint.value = localStorage.getItem('aws_api_3d_endpoint') || '';
+    el.api3dKey.value = localStorage.getItem('aws_api_3d_key') || '';
     setSettingsTab(tab || 'models');
     el.settingsModal.classList.remove('view-hidden');
     document.body.style.overflow = 'hidden';
@@ -4034,6 +4108,14 @@ loop();
     localStorage.setItem('aws_firebase_id', el.dfFirebaseId.value);
     toast('Deployment settings saved!', 'success');
   });
+  // API settings
+  el.btnSaveApis.addEventListener('click', () => {
+    localStorage.setItem('aws_api_video_endpoint', el.apiVideoEndpoint.value);
+    localStorage.setItem('aws_api_video_key', el.apiVideoKey.value);
+    localStorage.setItem('aws_api_3d_endpoint', el.api3dEndpoint.value);
+    localStorage.setItem('aws_api_3d_key', el.api3dKey.value);
+    toast('API settings saved!', 'success');
+  });
 
   // Modal
   el.btnCloseModal.addEventListener('click', closeModal);
@@ -4049,6 +4131,17 @@ loop();
     el.btnCopyUrl.textContent = 'Copied!';
     setTimeout(() => { el.btnCopyUrl.textContent = 'Copy'; }, 1500);
   });
+  // Vercel token handlers
+  $('#btn-save-vercel-token').addEventListener('click', async () => {
+    const token = el.vercelTokenInput.value.trim();
+    if (!token) { toast('Enter your Vercel token first', 'error'); return; }
+    localStorage.setItem('aws_vercel_token', token);
+    toast('Token saved! Deploying now…', 'success');
+    await new Promise(r => setTimeout(r, 800));
+    setModalState('loading');
+    await startDeploy();
+  });
+  $('#btn-cancel-token').addEventListener('click', closeModal);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeProjects(); closeSettings(); closeAuth(); closeMailbox(); closeTeamChat(); } });
 
   // Credits badge — tap to see how many are left / when they refill
