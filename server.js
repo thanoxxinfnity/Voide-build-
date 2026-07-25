@@ -315,15 +315,26 @@ app.delete('/api/teams/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// Team group chat — any member can post; returns the last 200 messages.
+// Team group chat — any member can post text and/or an image; returns
+// the last 200 messages. Images travel as data URLs, capped at ~250KB.
 app.post('/api/teams/:id/chat', requireAuth, (req, res) => {
   const team = store.teams[req.params.id];
   if (!team) return res.status(404).json({ error: 'Team not found' });
   if (teamRole(team, req.auth.email) === null) return res.status(403).json({ error: "You're not a member of this team" });
   const text = String((req.body || {}).text || '').trim().slice(0, 500);
-  if (!text) return res.status(400).json({ error: 'Message is empty' });
+  const image = (req.body || {}).image;
+  const hasImage = typeof image === 'string' && image.startsWith('data:image/');
+  if (!text && !hasImage) return res.status(400).json({ error: 'Message is empty' });
+  if (image && !hasImage) return res.status(400).json({ error: 'Invalid image' });
+  if (hasImage && image.length > 350000) return res.status(400).json({ error: 'Image too large (max ~250KB)' });
   backfillTeam(team);
-  const message = { id: 'msg_' + crypto.randomBytes(4).toString('hex'), fromEmail: req.auth.email, text, createdAt: Date.now() };
+  const message = {
+    id: 'msg_' + crypto.randomBytes(4).toString('hex'),
+    fromEmail: req.auth.email,
+    text,
+    image: hasImage ? image : null,
+    createdAt: Date.now(),
+  };
   team.chat.push(message);
   if (team.chat.length > 200) team.chat = team.chat.slice(-200);
   saveStore();

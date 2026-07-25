@@ -230,6 +230,12 @@
         <span id="mailbox-badge" class="view-hidden absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">0</span>
       </button>
 
+      <!-- Team Chat (separate from the AI Build Console) -->
+      <button id="btn-teamchat" class="btn glass flex shrink-0 items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="Team chat">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span class="hidden md:inline">Team Chat</span>
+      </button>
+
       <!-- Projects (history + new project) -->
       <button id="btn-projects" class="btn glass flex shrink-0 items-center gap-2 rounded-xl p-2 text-sm font-medium text-slate-200 hover:border-white/20 hover:bg-white/10 sm:px-3" title="Your projects">
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 8 4.5v9L12 20l-8-4.5v-9L12 2z"/><path d="m12 2 8 4.5-8 4.5-8-4.5L12 2z"/><path d="M12 11v9"/></svg>
@@ -754,6 +760,46 @@
   </div>
 
   <!-- ============================================================ -->
+  <!-- TEAM CHAT MODAL — separate from the AI Build Console chat.   -->
+  <!-- Human-to-human, per team; supports text and images.          -->
+  <!-- ============================================================ -->
+  <div id="teamchat-modal" class="view-hidden fixed inset-0 z-50 grid place-items-center p-4">
+    <div id="teamchat-backdrop" class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+    <div class="glass-strong animate-pop relative flex h-[80vh] w-full max-w-lg flex-col rounded-2xl p-5 sm:p-6">
+      <button id="btn-close-teamchat" class="btn absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" title="Close">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+
+      <div class="mb-3 flex items-center gap-2 pr-8">
+        <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-violet-500/15 text-violet-300">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </span>
+        <div class="min-w-0 flex-1">
+          <h3 class="text-lg font-bold text-white">Team Chat</h3>
+          <p class="text-[11px] text-slate-500">Just your teammates — separate from the AI Build Console.</p>
+        </div>
+        <select id="teamchat-select" class="shrink-0 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-xs text-slate-200 outline-none"></select>
+      </div>
+
+      <div id="teamchat-log" class="nice-scroll flex-1 space-y-3 overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-3"></div>
+
+      <div id="teamchat-preview-row" class="view-hidden mt-2 flex items-center gap-2">
+        <img id="teamchat-preview-img" class="h-12 w-12 rounded-lg object-cover" />
+        <span class="text-xs text-slate-400">Image attached</span>
+        <button id="teamchat-preview-clear" class="text-xs font-semibold text-rose-300 hover:text-rose-200">Remove</button>
+      </div>
+      <div class="mt-2 flex items-end gap-2">
+        <input id="teamchat-image-input" type="file" accept="image/*" class="hidden" />
+        <button id="btn-teamchat-attach" class="btn glass shrink-0 rounded-lg p-2.5 text-slate-300 hover:text-white" title="Attach an image">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+        </button>
+        <input id="teamchat-text" type="text" placeholder="Message the team…" class="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+        <button id="btn-teamchat-send" class="btn btn-primary shrink-0 rounded-lg px-4 py-2.5 text-sm font-semibold text-white">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
   <!-- DEPLOY MODAL                                                 -->
   <!-- ============================================================ -->
   <div id="deploy-modal" class="view-hidden fixed inset-0 z-50 grid place-items-center p-4">
@@ -933,6 +979,19 @@
     mailboxAddress:   $('#mailbox-address'),
     mailboxIncoming:  $('#mailbox-incoming'),
     mailboxSent:      $('#mailbox-sent'),
+    // team chat modal
+    btnTeamchat:      $('#btn-teamchat'),
+    teamchatModal:    $('#teamchat-modal'),
+    teamchatBackdrop: $('#teamchat-backdrop'),
+    teamchatSelect:   $('#teamchat-select'),
+    teamchatLog:      $('#teamchat-log'),
+    teamchatText:     $('#teamchat-text'),
+    btnTeamchatSend:  $('#btn-teamchat-send'),
+    btnTeamchatAttach: $('#btn-teamchat-attach'),
+    teamchatImageInput: $('#teamchat-image-input'),
+    teamchatPreviewRow: $('#teamchat-preview-row'),
+    teamchatPreviewImg: $('#teamchat-preview-img'),
+    teamchatPreviewClear: $('#teamchat-preview-clear'),
     // settings / profile modal
     btnSettings:      $('#btn-settings'),
     settingsModal:    $('#settings-modal'),
@@ -2020,12 +2079,12 @@
     }
   }
 
-  async function sendTeamChat(teamId, text, onDone) {
+  async function sendTeamChat(teamId, { text, image }, onDone) {
     try {
       const res = await fetch(`${API.teams}/${encodeURIComponent(teamId)}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, image }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Could not send message');
@@ -2035,6 +2094,91 @@
     } catch (err) {
       toast(err.message, 'error');
     }
+  }
+
+  /* ============================================================
+   *  TEAM CHAT MODAL — separate, dedicated panel for human-to-human
+   *  messages between teammates. Not the AI Build Console: nothing
+   *  typed here reaches VOID, and nothing VOID says shows up here.
+   * ============================================================ */
+  let teamchatPickedImage = null; // data URL of a picked-but-not-yet-sent image
+
+  function populateTeamchatSelect(preselectId) {
+    el.teamchatSelect.innerHTML = state.teams
+      .map((t) => `<option value="${t.id}">${t.name.replace(/</g, '&lt;')}</option>`)
+      .join('');
+    if (preselectId && state.teams.some((t) => t.id === preselectId)) el.teamchatSelect.value = preselectId;
+  }
+
+  function currentTeamchatId() {
+    return el.teamchatSelect.value || null;
+  }
+
+  function renderTeamchatLog() {
+    const team = state.teams.find((t) => t.id === currentTeamchatId());
+    const me = state.auth?.user?.email;
+    if (!team) {
+      el.teamchatLog.innerHTML = '<p class="py-6 text-center text-sm text-slate-500">No team selected.</p>';
+      return;
+    }
+    const msgs = team.chat || [];
+    el.teamchatLog.innerHTML = msgs.length ? '' : '<p class="py-6 text-center text-sm text-slate-500">No messages yet — say hi 👋</p>';
+    msgs.forEach((m) => {
+      const mine = m.fromEmail === me;
+      const row = document.createElement('div');
+      row.className = `flex ${mine ? 'justify-end' : 'justify-start'}`;
+      row.innerHTML = `
+        <div class="max-w-[80%]">
+          <p class="mb-0.5 px-1 text-[10px] text-slate-500">${mine ? 'You' : m.fromEmail}</p>
+          <div class="rounded-2xl ${mine ? 'rounded-tr-md bg-brand-500/25' : 'rounded-tl-md bg-white/5'} px-3.5 py-2.5 text-sm text-slate-200"></div>
+        </div>`;
+      const bubble = row.querySelector('.rounded-2xl');
+      if (m.image) {
+        const img = document.createElement('img');
+        img.src = m.image;
+        img.className = 'mb-1 max-h-52 rounded-lg';
+        bubble.appendChild(img);
+      }
+      if (m.text) {
+        const p = document.createElement('p');
+        p.textContent = m.text;
+        p.className = 'whitespace-pre-wrap';
+        bubble.appendChild(p);
+      }
+      el.teamchatLog.appendChild(row);
+    });
+    el.teamchatLog.scrollTop = el.teamchatLog.scrollHeight;
+  }
+
+  function clearTeamchatImage() {
+    teamchatPickedImage = null;
+    el.teamchatImageInput.value = '';
+    el.teamchatPreviewRow.classList.add('view-hidden');
+  }
+
+  function openTeamChat(preselectId) {
+    if (!state.teams.length) { toast('Join or create a team first — Settings → Team', 'error'); return; }
+    clearTeamchatImage();
+    populateTeamchatSelect(preselectId || state.activeTeamId);
+    renderTeamchatLog();
+    el.teamchatModal.classList.remove('view-hidden');
+    document.body.style.overflow = 'hidden';
+    el.teamchatText.focus();
+  }
+  function closeTeamChat() {
+    el.teamchatModal.classList.add('view-hidden');
+    document.body.style.overflow = '';
+  }
+
+  async function sendTeamchatMessage() {
+    const teamId = currentTeamchatId();
+    if (!teamId) return;
+    const text = el.teamchatText.value.trim();
+    const image = teamchatPickedImage;
+    if (!text && !image) return;
+    el.teamchatText.value = '';
+    clearTeamchatImage();
+    await sendTeamChat(teamId, { text, image }, renderTeamchatLog);
   }
 
   async function removeTeamMember(teamId, email) {
@@ -2079,7 +2223,6 @@
     state.teams.forEach((team) => {
       const isActive = state.activeTeamId === team.id;
       const isOwner = team.ownerEmail === me;
-      const chat = team.chat || [];
       const card = document.createElement('div');
       card.className = `rounded-xl border p-3.5 ${isActive ? 'border-brand-400/50 bg-brand-500/10' : 'border-white/10 bg-white/5'}`;
       card.innerHTML = `
@@ -2103,17 +2246,10 @@
 
         <div class="team-members mt-3 space-y-1.5"></div>
 
-        <button class="team-chat-toggle mt-3 flex w-full items-center justify-between text-xs font-medium text-slate-400 hover:text-white">
-          <span>💬 Team chat (${chat.length})</span>
-          <span class="team-chat-caret">▾</span>
-        </button>
-        <div class="team-chat-panel view-hidden mt-2">
-          <div class="team-chat-log nice-scroll max-h-40 space-y-1.5 overflow-y-auto rounded-lg border border-white/10 bg-black/20 p-2.5"></div>
-          <div class="mt-1.5 flex gap-1.5">
-            <input type="text" placeholder="Message the team…" class="team-chat-input flex-1 rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
-            <button class="team-chat-send btn btn-primary shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-white">Send</button>
-          </div>
-        </div>`;
+        <button class="team-open-chat mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-white/10 py-1.5 text-xs font-medium text-slate-300 hover:border-white/20 hover:text-white">
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Open Team Chat (${(team.chat || []).length})
+        </button>`;
       card.querySelector('.text-sm.font-semibold').textContent = team.name;
       card.querySelector('.team-desc').textContent = team.description || '';
       card.querySelector('.team-desc').classList.toggle('view-hidden', !team.description);
@@ -2121,6 +2257,7 @@
       card.querySelector('.team-code').textContent = team.code;
       card.querySelector('.team-copy-code').addEventListener('click', () => copyText(team.code, 'Team code copied'));
       card.querySelector('.team-pick').addEventListener('click', () => setActiveTeam(isActive ? null : team.id));
+      card.querySelector('.team-open-chat').addEventListener('click', () => { closeSettings(); openTeamChat(team.id); });
 
       const membersWrap = card.querySelector('.team-members');
       team.members.forEach((m) => {
@@ -2134,37 +2271,6 @@
         }
         membersWrap.appendChild(row);
       });
-
-      // Chat
-      const chatToggle = card.querySelector('.team-chat-toggle');
-      const chatPanel = card.querySelector('.team-chat-panel');
-      const chatCaret = card.querySelector('.team-chat-caret');
-      const chatLog = card.querySelector('.team-chat-log');
-      const chatInput = card.querySelector('.team-chat-input');
-      const chatSend = card.querySelector('.team-chat-send');
-      function paintChat() {
-        chatLog.innerHTML = (team.chat || []).length
-          ? (team.chat || []).map((m) => `
-            <div class="text-[11px]"><span class="font-semibold ${m.fromEmail === me ? 'text-brand-300' : 'text-slate-300'}">${m.fromEmail === me ? 'You' : m.fromEmail.split('@')[0]}:</span> <span class="text-slate-400">${m.text.replace(/</g, '&lt;')}</span></div>`).join('')
-          : '<p class="text-center text-[11px] text-slate-600">No messages yet</p>';
-        chatLog.scrollTop = chatLog.scrollHeight;
-      }
-      chatToggle.addEventListener('click', () => {
-        const hidden = chatPanel.classList.toggle('view-hidden');
-        chatCaret.textContent = hidden ? '▾' : '▴';
-        if (!hidden) paintChat();
-      });
-      const doSend = () => {
-        const text = chatInput.value.trim();
-        if (!text) return;
-        chatInput.value = '';
-        sendTeamChat(team.id, text, () => {
-          chatToggle.querySelector('span').textContent = `💬 Team chat (${(team.chat || []).length})`;
-          paintChat();
-        });
-      };
-      chatSend.addEventListener('click', doSend);
-      chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSend(); });
 
       el.teamsList.appendChild(card);
     });
@@ -3753,6 +3859,28 @@ loop();
   el.btnMailbox.addEventListener('click', () => gate(openMailbox));
   el.mailboxBackdrop.addEventListener('click', closeMailbox);
   $('#btn-close-mailbox').addEventListener('click', closeMailbox);
+
+  // Team Chat
+  el.btnTeamchat.addEventListener('click', () => gate(() => openTeamChat()));
+  el.teamchatBackdrop.addEventListener('click', closeTeamChat);
+  $('#btn-close-teamchat').addEventListener('click', closeTeamChat);
+  el.teamchatSelect.addEventListener('change', renderTeamchatLog);
+  el.btnTeamchatSend.addEventListener('click', sendTeamchatMessage);
+  el.teamchatText.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendTeamchatMessage(); });
+  el.btnTeamchatAttach.addEventListener('click', () => el.teamchatImageInput.click());
+  el.teamchatPreviewClear.addEventListener('click', clearTeamchatImage);
+  el.teamchatImageInput.addEventListener('change', () => {
+    const file = el.teamchatImageInput.files[0];
+    if (!file) return;
+    if (file.size > 250000) { toast('Image too large — max 250KB', 'error'); el.teamchatImageInput.value = ''; return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      teamchatPickedImage = reader.result;
+      el.teamchatPreviewImg.src = teamchatPickedImage;
+      el.teamchatPreviewRow.classList.remove('view-hidden');
+    };
+    reader.readAsDataURL(file);
+  });
   el.btnHome.addEventListener('click', () => { if (!state.busy) showHero(); });
   el.btnRefresh.addEventListener('click', () => { if (state.files['index.html']) refreshPreview(); });
   el.btnNewFile.addEventListener('click', newFile);
@@ -3809,7 +3937,7 @@ loop();
     el.btnCopyUrl.textContent = 'Copied!';
     setTimeout(() => { el.btnCopyUrl.textContent = 'Copy'; }, 1500);
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeProjects(); closeSettings(); closeAuth(); closeMailbox(); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeProjects(); closeSettings(); closeAuth(); closeMailbox(); closeTeamChat(); } });
 
   // Credits badge — tap to see how many are left / when they refill
   el.planBadge.addEventListener('click', creditsInfo);
