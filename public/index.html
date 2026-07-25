@@ -764,6 +764,37 @@
   </div>
 
   <!-- ============================================================ -->
+  <!-- CLARIFICATION MODAL (smart questions)                       -->
+  <!-- ============================================================ -->
+  <div id="clarify-modal" class="view-hidden fixed inset-0 z-50 grid place-items-center p-4">
+    <div id="clarify-backdrop" class="absolute inset-0 bg-black/70 backdrop-blur-sm"></div>
+    <div class="glass-strong animate-pop relative w-full max-w-md rounded-2xl p-6">
+      <div class="mb-4">
+        <h3 class="text-lg font-bold text-white">Let me understand better</h3>
+        <p class="mt-1 text-sm text-slate-400">A few quick questions so I build exactly what you need</p>
+      </div>
+
+      <div id="clarify-content" class="space-y-3">
+        <!-- Questions inserted here -->
+      </div>
+
+      <div class="mt-5 flex gap-2">
+        <button id="btn-build-anyway" class="btn btn-primary flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white">Build Now</button>
+        <button id="btn-clarify-cancel" class="btn glass rounded-lg px-4 py-2.5 text-sm font-medium text-slate-200 hover:text-white">Cancel</button>
+      </div>
+
+      <div id="clarify-score" class="mt-4 rounded-lg border border-white/10 bg-black/30 p-3">
+        <div class="mb-2 flex items-center justify-between text-xs">
+          <span class="text-slate-400">Clarity score</span>
+          <span id="clarify-score-value" class="font-bold text-amber-300">0/100</span>
+        </div>
+        <div class="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+          <div id="clarify-score-bar" class="h-full w-0 rounded-full bg-gradient-to-r from-brand-500 to-accent-500 transition-all duration-300"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- PROJECTS MODAL (history)                                     -->
   <!-- ============================================================ -->
   <div id="projects-modal" class="view-hidden fixed inset-0 z-50 grid place-items-center p-4">
@@ -1057,6 +1088,14 @@
     deployLabelShort: $('#deploy-label-short'),
     deployIconRocket: $('#deploy-icon-rocket'),
     deployIconUpdate: $('#deploy-icon-update'),
+    // clarify modal
+    clarifyModal:     $('#clarify-modal'),
+    clarifyBackdrop:  $('#clarify-backdrop'),
+    clarifyContent:   $('#clarify-content'),
+    clarifyScore:     $('#clarify-score-value'),
+    clarifyScoreBar:  $('#clarify-score-bar'),
+    btnBuildAnyway:   $('#btn-build-anyway'),
+    btnClarifyCanel:  $('#btn-clarify-cancel'),
     // projects modal
     projectsModal:    $('#projects-modal'),
     projectsBackdrop: $('#projects-backdrop'),
@@ -3691,12 +3730,11 @@ loop();
 
   // ---------- Prompt clarity score + clarification quiz ----------
   const ASPECTS = [
-    { id: 'type',     q: 'What kind of site is this?',            options: ['Landing page', 'Portfolio', 'Dashboard', 'Online store', 'Blog', 'Web app'], test: (p) => /(landing|portfolio|dashboard|shop|store|e-?commerce|blog|web ?app|website|site for)/.test(p) },
-    { id: 'style',    q: 'What visual style / theme do you want?', options: ['Dark & modern', 'Light & minimal', 'Colorful & playful', 'Corporate', 'Luxury / elegant'], test: (p) => /(dark|light|minimal|modern|colou?rful|playful|corporate|luxury|elegant|theme|neon|glass)/.test(p) },
-    { id: 'sections', q: 'Which sections do you need?', multi: true, options: ['Hero', 'Features', 'Pricing', 'Testimonials', 'Gallery', 'Contact form', 'FAQ', 'Footer'], test: (p) => /(hero|feature|pricing|testimonial|gallery|contact|faq|footer|about|team|section)/.test(p) },
-    { id: 'anim',     q: 'Any animations or 3D?',                 options: ['Smooth animations', '3D models', 'Both', 'Keep it simple'], test: (p) => /(anim|3d|three|motion|parallax|scroll|interactive|hover|transition)/.test(p) },
-    { id: 'goal',     q: 'Main goal / call-to-action?',           options: ['Sign up', 'Buy now', 'Contact', 'Book a demo', 'Download', 'Just informational'], test: (p) => /(sign ?up|buy|purchase|checkout|contact|book|demo|download|subscribe|call to action|cta|lead)/.test(p) },
-    { id: 'brand',    q: 'Brand name & tagline (or use placeholders)?', options: ["I'll type it", 'Use placeholder content'], test: (p) => /(called|named|brand|company|["'].+["']|for a |for my )/.test(p) },
+    { id: 'purpose', q: 'What is this site for? (Who is the user?)', options: ['Startup/SaaS', 'Portfolio', 'E-commerce', 'Community/Blog', 'Tool/App', 'Personal'], test: (p) => /(startup|saas|portfolio|shop|store|blog|community|tool|app|personal|company|business)/.test(p) },
+    { id: 'ui',      q: 'UI style preference?', options: ['Modern & minimal', 'Bold & colorful', 'Professional', 'Creative/Artistic', 'Retro/Nostalgic'], test: (p) => /(modern|minimal|bold|colou?rful|professional|creative|artistic|retro|nostalgic|minimal|dark|light|clean)/.test(p) },
+    { id: 'interact', q: 'Level of interactivity needed?', options: ['Static (fast load)', 'Moderate (some animations)', 'Highly interactive', 'Real-time (WebSocket)'], test: (p) => /(static|interact|anim|real-time|websocket|dynamic|live|scroll|hover|3d|canvas|game)/.test(p) },
+    { id: 'content', q: 'What\'s the main content?', options: ['Text-heavy', 'Image gallery', 'Video/Media', 'Mixed content', 'User-generated content'], test: (p) => /(text|image|video|media|content|gallery|user|generate)/.test(p) },
+    { id: 'action',  q: 'Primary user action?', options: ['View/Browse', 'Sign up', 'Purchase', 'Download', 'Connect/Contact', 'No CTA'], test: (p) => /(view|sign ?up|buy|purchase|download|contact|connect|share|follow|subscribe|action|cta)/.test(p) },
   ];
 
   function scorePrompt(p, coveredCount) {
@@ -3784,22 +3822,78 @@ loop();
 
   function startClarify(prompt, covered) {
     clarify = { prompt, covered, answers: {}, queue: ASPECTS.filter((a) => !covered.has(a.id)) };
-    addAssistantMessage("Before I build, let me get this exactly right. A few quick questions — pick an option or type your own.");
-    renderScoreBubble();
-    askNextClar();
+    addAssistantMessage("Let me ask a few questions so I build exactly what you need.");
+    renderClarifyModal();
   }
-  function askNextClar() {
-    renderScoreBubble();
+
+  function renderClarifyModal() {
+    if (!clarify || clarify.queue.length === 0) { finishClarify(); return; }
     const score = scorePrompt(clarify.prompt.toLowerCase(), clarify.covered.size);
-    if (score >= 95 || clarify.queue.length === 0) { finishClarify(); return; }
-    const asp = clarify.queue.shift();
-    addQuestionBlock(asp, (val) => {
-      clarify.answers[asp.id] = val;
-      clarify.covered.add(asp.id);
-      addUserMessage(val);
-      askNextClar();
-    });
+    el.clarifyScore.textContent = `${score}/100`;
+    el.clarifyScoreBar.style.width = `${score}%`;
+
+    el.clarifyContent.innerHTML = '';
+    const questionsToShow = clarify.queue.slice(0, 2); // Show 2 at a time
+
+    for (const asp of questionsToShow) {
+      const div = document.createElement('div');
+      div.className = 'rounded-lg border border-white/10 bg-black/30 p-3.5';
+      div.innerHTML = `<p class="mb-2.5 text-sm font-medium text-white">${asp.q}</p>`;
+
+      const optionsDiv = document.createElement('div');
+      optionsDiv.className = 'space-y-1.5 mb-2';
+
+      for (const opt of asp.options) {
+        const btn = document.createElement('button');
+        btn.className = 'btn glass w-full text-left rounded-lg px-3 py-1.5 text-sm text-slate-200 hover:bg-white/15';
+        btn.textContent = opt;
+        btn.addEventListener('click', () => handleClarifyAnswer(asp.id, opt));
+        optionsDiv.appendChild(btn);
+      }
+
+      div.appendChild(optionsDiv);
+
+      const customDiv = document.createElement('div');
+      customDiv.className = 'flex gap-1.5';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Or type your own…';
+      input.className = 'flex-1 rounded-lg border border-white/10 bg-black/20 px-2.5 py-1 text-xs text-slate-100 placeholder-slate-600 outline-none focus:border-accent-400/60';
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-primary shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium';
+      btn.textContent = 'OK';
+      btn.addEventListener('click', () => {
+        if (input.value.trim()) handleClarifyAnswer(asp.id, input.value.trim());
+      });
+      customDiv.appendChild(input);
+      customDiv.appendChild(btn);
+      div.appendChild(customDiv);
+
+      el.clarifyContent.appendChild(div);
+    }
+
+    el.clarifyModal.classList.remove('view-hidden');
+    document.body.style.overflow = 'hidden';
   }
+
+  function handleClarifyAnswer(id, answer) {
+    clarify.answers[id] = answer;
+    clarify.covered.add(id);
+    clarify.queue = clarify.queue.filter(a => a.id !== id);
+    const score = scorePrompt(clarify.prompt.toLowerCase(), clarify.covered.size);
+    if (score >= 95 || clarify.queue.length === 0) {
+      closeClarifyModal();
+      finishClarify();
+    } else {
+      renderClarifyModal();
+    }
+  }
+
+  function closeClarifyModal() {
+    el.clarifyModal.classList.add('view-hidden');
+    document.body.style.overflow = '';
+  }
+
   function finishClarify() {
     if (!clarify) return;
     const answers = clarify.answers;
@@ -3807,7 +3901,7 @@ loop();
     const spec = Object.keys(answers).map((k) => `- ${k}: ${answers[k]}`).join('\n');
     clarify = null; scoreNode = null;
     const full = base + (spec ? `\n\nAdditional requirements:\n${spec}` : '');
-    addAssistantMessage('Perfect — I have a clear picture now. Starting the build. 🛠️');
+    addAssistantMessage('Perfect — building now. 🛠️ Watch the thinking process below.');
     runBuild(full);
   }
 
@@ -4131,6 +4225,18 @@ loop();
     el.btnCopyUrl.textContent = 'Copied!';
     setTimeout(() => { el.btnCopyUrl.textContent = 'Copy'; }, 1500);
   });
+  // Clarify modal handlers
+  el.btnBuildAnyway.addEventListener('click', () => {
+    closeClarifyModal();
+    finishClarify();
+  });
+  el.btnClarifyCanel.addEventListener('click', () => {
+    closeClarifyModal();
+    clarify = null;
+    scoreNode = null;
+  });
+  el.clarifyBackdrop.addEventListener('click', () => closeClarifyModal());
+
   // Vercel token handlers
   $('#btn-save-vercel-token').addEventListener('click', async () => {
     const token = el.vercelTokenInput.value.trim();

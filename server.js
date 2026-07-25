@@ -545,8 +545,16 @@ app.delete('/api/projects/:id', requireAuth, (req, res) => {
 const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
 const SYSTEM_PROMPT = [
-  'You are an expert front-end engineer and UI designer.',
-  'Generate a COMPLETE, single-file, production-ready website as ONE HTML document.',
+  'You are an expert front-end engineer and UI designer with deep reasoning capabilities.',
+  '',
+  'THINKING FIRST (shown to user):',
+  '- Analyze the requirements in detail',
+  '- Plan the architecture and components',
+  '- Consider responsive design and accessibility',
+  '- Think through interactions and animations',
+  '- Review for best practices before coding',
+  '',
+  'Then generate a COMPLETE, single-file, production-ready website as ONE HTML document.',
   'Rules:',
   '- Return ONLY raw HTML. Start with <!DOCTYPE html> and end with </html>.',
   '- No markdown, no code fences, no explanations before or after.',
@@ -678,7 +686,7 @@ app.post('/api/generate-code', requireAuth, async (req, res) => {
     cfg = { type: 'openai', endpoint: 'https://api.groq.com/openai/v1', apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL };
     modelName = GROQ_MODEL;
   } else {
-    return res.status(501).json({ error: 'no model configured — add one in Settings or set GROQ_API_KEY' });
+    return res.status(501).json({ error: 'No AI model configured. Add one in Settings → Models (OpenAI, Claude, Gemini) or set GROQ_API_KEY in environment variables.' });
   }
 
   // Check model capacity and load balance
