@@ -82,12 +82,8 @@
     .log-line { animation: fadeUp .35s ease both; }
     .log-dot { box-shadow: 0 0 10px currentColor; }
 
-    /* ---------- Code viewer ---------- */
+    /* ---------- Code editor ---------- */
     .code-area { tab-size: 2; }
-    .tok-tag  { color: #f472b6; }
-    .tok-attr { color: #a5b4fc; }
-    .tok-str  { color: #86efac; }
-    .tok-com  { color: #64748b; font-style: italic; }
 
     /* ---------- Typing dots ---------- */
     .typing-dot { animation: blink 1.2s infinite; }
@@ -435,6 +431,9 @@
         </div>
 
         <div class="flex items-center gap-2">
+          <!-- Live collaborators viewing/editing this project -->
+          <div id="presence-stack" class="view-hidden -space-x-2"></div>
+
           <!-- Viewport toggles (preview only) -->
           <div id="viewport-toggles" class="hidden items-center gap-1 rounded-xl bg-black/25 p-1 lg:flex">
             <button data-vw="100%" class="vw-btn btn rounded-lg p-1.5 text-slate-400 hover:text-white" title="Desktop width">
@@ -498,7 +497,12 @@
               index.html
             </div>
           </div>
-          <pre id="code-view" class="code-area nice-scroll m-0 flex-1 overflow-auto p-5 font-mono text-[12.5px] leading-relaxed text-slate-300"><code id="code-content">&lt;!-- Your generated code will appear here --&gt;</code></pre>
+          <textarea
+            id="code-editor"
+            spellcheck="false"
+            placeholder="<!-- Your generated code will appear here — edit it directly, live -->"
+            class="code-area nice-scroll m-0 flex-1 resize-none overflow-auto border-0 bg-transparent p-5 font-mono text-[12.5px] leading-relaxed text-slate-300 outline-none"
+          ></textarea>
         </div>
       </div>
     </section>
@@ -895,7 +899,8 @@
     overlay:       $('#preview-overlay'),
     overlayTitle:  $('#overlay-title'),
     overlaySub:    $('#overlay-sub'),
-    codeContent:   $('#code-content'),
+    codeEditor:    $('#code-editor'),
+    presenceStack: $('#presence-stack'),
     btnCopy:       $('#btn-copy'),
     copyLabel:     $('#copy-label'),
     btnDownload:   $('#btn-download'),
@@ -1211,6 +1216,7 @@
   function showHero() {
     el.viewWorkspace.classList.add('view-hidden');
     el.viewHero.classList.remove('view-hidden');
+    disconnectCollab();
   }
 
   // ---------- Tabs (Preview / Code) ----------
@@ -1248,7 +1254,7 @@
   function renderOutput(code) {
     state.code = code;
     el.iframe.srcdoc = code;
-    el.codeContent.innerHTML = highlight(code);
+    el.codeEditor.value = code;
     el.overlay.classList.add('view-hidden');
     el.btnDownload.disabled = false;
     el.btnDeploy.disabled = false;
@@ -1261,17 +1267,81 @@
     el.overlay.classList.remove('view-hidden');
   }
 
-  // Lightweight HTML syntax highlighting (escape first, then decorate)
-  function escapeHtml(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  /* ============================================================
+   *  LIVE COLLAB — real-time multiplayer over WebSocket.
+   *  Everyone with access to a project who has it open joins the same
+   *  room: their presence shows as an avatar stack, and edits in the
+   *  Code Editor are relayed to everyone else in that room live —
+   *  the same project, built together, like Replit's multiplayer.
+   * ============================================================ */
+  const collab = { ws: null, projectId: null };
+  const PRESENCE_COLORS = ['#818cf8', '#22d3ee', '#f472b6', '#34d399', '#facc15', '#fb923c', '#a78bfa'];
+  function colorForEmail(email) {
+    let h = 0;
+    for (let i = 0; i < email.length; i++) h = (h * 31 + email.charCodeAt(i)) >>> 0;
+    return PRESENCE_COLORS[h % PRESENCE_COLORS.length];
   }
-  function highlight(src) {
-    let out = escapeHtml(src);
-    out = out.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="tok-com">$1</span>');
-    out = out.replace(/(&lt;\/?)([a-zA-Z][\w-]*)/g, '$1<span class="tok-tag">$2</span>');
-    out = out.replace(/([\w-]+)=(&quot;|')(.*?)\2/g, '<span class="tok-attr">$1</span>=$2<span class="tok-str">$3</span>$2');
-    return out;
+
+  function connectCollab(projectId) {
+    if (!projectId || !state.auth?.token) return;
+    if (collab.projectId === projectId && collab.ws && collab.ws.readyState <= 1) return; // already connected
+    disconnectCollab();
+    try {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(`${proto}://${location.host}/ws?projectId=${encodeURIComponent(projectId)}&token=${encodeURIComponent(state.auth.token)}`);
+      ws.onmessage = (e) => {
+        let msg; try { msg = JSON.parse(e.data); } catch { return; }
+        if (msg.type === 'presence') renderPresence(msg.users);
+        else if (msg.type === 'code_update') applyRemoteCode(msg.code);
+      };
+      ws.onclose = () => { if (collab.ws === ws) { collab.ws = null; renderPresence([]); } };
+      ws.onerror = () => {};
+      collab.ws = ws;
+      collab.projectId = projectId;
+    } catch { /* WebSocket unsupported/unreachable — collab just stays off */ }
   }
+  function disconnectCollab() {
+    if (collab.ws) { try { collab.ws.close(); } catch {} }
+    collab.ws = null;
+    collab.projectId = null;
+    renderPresence([]);
+  }
+  function renderPresence(users) {
+    const others = (users || []).filter((e) => e !== state.auth?.user?.email);
+    el.presenceStack.innerHTML = '';
+    el.presenceStack.classList.toggle('view-hidden', others.length === 0);
+    others.slice(0, 5).forEach((email) => {
+      const av = document.createElement('span');
+      av.className = 'inline-grid h-6 w-6 place-items-center rounded-full border-2 border-ink-900 text-[10px] font-bold text-white';
+      av.style.background = colorForEmail(email);
+      av.title = `${email} is here`;
+      av.textContent = email[0].toUpperCase();
+      el.presenceStack.appendChild(av);
+    });
+  }
+  function applyRemoteCode(code) {
+    state.code = code;
+    el.iframe.srcdoc = code;
+    if (document.activeElement !== el.codeEditor) el.codeEditor.value = code;
+  }
+
+  // Debounced: broadcast local edits to collaborators, refresh the live
+  // preview, and persist — all without re-running the AI.
+  let codeEditTimer = null;
+  el.codeEditor.addEventListener('input', () => {
+    const val = el.codeEditor.value;
+    clearTimeout(codeEditTimer);
+    codeEditTimer = setTimeout(() => {
+      state.code = val;
+      el.iframe.srcdoc = val;
+      el.btnDownload.disabled = !val;
+      updateDeployButton();
+      if (collab.ws && collab.ws.readyState === WebSocket.OPEN) {
+        collab.ws.send(JSON.stringify({ type: 'code_update', code: val }));
+      }
+      saveProject();
+    }, 400);
+  });
 
   // ---------- Build log script ----------
   const BUILD_STEPS = [
@@ -1550,7 +1620,7 @@
     clarify = null; scoreNode = null;
     renderAttachments();
     el.chatStream.innerHTML = '';
-    el.codeContent.innerHTML = '&lt;!-- Your generated code will appear here --&gt;';
+    el.codeEditor.value = '';
     el.iframe.srcdoc = '';
     el.heroPrompt.value = '';
     el.btnDownload.disabled = true;
@@ -1662,6 +1732,7 @@
     showWorkspace();
     setTab('preview');
     renderOutput(p.code);
+    connectCollab(p.id);
     setBuildStatus('Ready', 'ok');
     addAssistantMessage(`Reopened “${p.name}”. Tell me what you'd like to change.`);
     if (window.innerWidth < 768) setMobilePanel('output');
@@ -3433,6 +3504,7 @@ loop();
     el.projectLabel.textContent = projectLabelText(state.projectId);
 
     showWorkspace();
+    connectCollab(state.projectId);
     setMobilePanel('chat');
     setTab('preview');
     el.chatStream.innerHTML = '';

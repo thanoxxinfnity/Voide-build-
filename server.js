@@ -24,6 +24,8 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
+const http = require('http');
+const { WebSocketServer } = require('ws');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -744,11 +746,66 @@ app.post('/api/deploy-vercel', requireAuth, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+/* ------------------------------------------------------------------ */
+/*  Real-time collab — live presence + live code sync over WebSocket. */
+/*  One "room" per projectId. Anyone who can access the project (its  */
+/*  owner, or a member of the team it's shared with) can join; edits  */
+/*  are relayed to everyone else in the room as they happen — this is */
+/*  what powers multiple people building the same project together,  */
+/*  live, like Replit's multiplayer.                                  */
+/* ------------------------------------------------------------------ */
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server, path: '/ws' });
+const rooms = new Map(); // projectId -> Map<ws, email>
+
+function broadcastPresence(projectId) {
+  const room = rooms.get(projectId);
+  if (!room) return;
+  const payload = JSON.stringify({ type: 'presence', users: [...new Set(room.values())] });
+  for (const ws of room.keys()) { if (ws.readyState === ws.OPEN) ws.send(payload); }
+}
+
+wss.on('connection', (ws, req) => {
+  let projectId, email;
+  try {
+    const url = new URL(req.url, 'http://localhost');
+    projectId = url.searchParams.get('projectId');
+    const auth = verifyToken(url.searchParams.get('token'));
+    if (!projectId || !auth?.email) { ws.close(1008, 'unauthorized'); return; }
+    const existingProject = store.projects[projectId];
+    if (existingProject && !canAccessProject(existingProject, auth.email)) { ws.close(1008, 'forbidden'); return; }
+    email = auth.email;
+  } catch { ws.close(1008, 'bad request'); return; }
+
+  if (!rooms.has(projectId)) rooms.set(projectId, new Map());
+  const room = rooms.get(projectId);
+  room.set(ws, email);
+  broadcastPresence(projectId);
+
+  ws.on('message', (raw) => {
+    let msg;
+    try { msg = JSON.parse(raw); } catch { return; }
+    if (msg.type === 'code_update' && typeof msg.code === 'string') {
+      const payload = JSON.stringify({ type: 'code_update', code: msg.code, fromEmail: email });
+      for (const [peer] of room) {
+        if (peer !== ws && peer.readyState === peer.OPEN) peer.send(payload);
+      }
+    }
+  });
+
+  ws.on('close', () => {
+    room.delete(ws);
+    if (room.size === 0) rooms.delete(projectId);
+    else broadcastPresence(projectId);
+  });
+});
+
+server.listen(PORT, () => {
   console.log(`AI Web Studio running at http://localhost:${PORT}`);
   console.log(`  Code generation : ${process.env.GROQ_API_KEY ? 'Groq (live)' : 'demo engine (no GROQ_API_KEY)'}`);
   console.log(`  Deploy          : ${process.env.VERCEL_TOKEN ? 'Vercel (live)' : 'demo URL (no VERCEL_TOKEN)'}`);
   console.log(`  GitHub mirror   : ${process.env.GITHUB_TOKEN && process.env.GITHUB_OWNER ? 'on' : 'off'}`);
   console.log(`  Auth            : ${storeWritable ? 'file store (data/users.json)' : 'in-memory (disk not writable)'}`);
   console.log(`  Google sign-in  : ${process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_API_KEY ? `on (project ${process.env.FIREBASE_PROJECT_ID})` : 'off (set FIREBASE_PROJECT_ID + FIREBASE_API_KEY)'}`);
+  console.log(`  Live collab     : ws://localhost:${PORT}/ws`);
 });

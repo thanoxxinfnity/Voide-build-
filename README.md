@@ -8,13 +8,14 @@ A white-label, single-page **AI Website Builder** — dark theme, glassmorphism,
 |---|---|
 | `public/index.html` | The complete front-end app (self-contained: markup, styles, logic) |
 | `public/tailwind.css` | Compiled Tailwind build — no CDN dependency (rebuild with `npx tailwindcss@3 -c tailwind.config.js -i <(printf '@tailwind base;@tailwind components;@tailwind utilities;') -o public/tailwind.css --minify` after adding new classes to `index.html`) |
-| `server.js` | Express server: code generation (Groq) + live deploy (Vercel) |
-| `package.json` | Minimal manifest (`express` only) |
+| `server.js` | Express server: code generation (Groq), live deploy (Vercel), auth/teams/projects API, and a WebSocket server for real-time multiplayer |
+| `package.json` | Minimal manifest (`express` + `ws`) |
 
 ## Features
 
 - **Hero / prompt state** — headline, large prompt textarea (`Ctrl+Enter` to submit), 6 one-click template chips (SaaS, Portfolio, Crypto Dashboard, Store, Restaurant, Blog).
-- **Split-screen workspace** — left *Build Console* with chat bubbles + animated terminal build logs and a follow-up refine input; right panel with **Live Preview** (sandboxed iframe) and **Code Editor** tabs (syntax-highlighted, Copy Code), plus desktop/tablet/mobile viewport toggles.
+- **Split-screen workspace** — left *Build Console* with chat bubbles + animated terminal build logs and a follow-up refine input; right panel with **Live Preview** (sandboxed iframe) and a **live, editable Code Editor** (type directly in it — the preview updates as you go, Copy Code), plus desktop/tablet/mobile viewport toggles.
+- **Real-time multiplayer** — like Replit, more than one person can build the same project together live. Everyone who has a project open shows up as an avatar stack in the Code Editor tab, and edits made there are broadcast to everyone else's editor and preview instantly over WebSocket (`ws://.../ws`) — no refresh needed. (Simple last-write-wins sync, not full operational-transform — two people editing the exact same line at the exact same instant can overwrite each other, same as pasting over someone mid-edit.)
 - **Free credits** — every account starts with **499 credits** and gets a fresh **499 every 15 days**, fully automatic. The header badge shows how many are left and the days until the next refill; tap it any time for a reminder.
 - **Deploy & Update** — one-click **Deploy Live** publishes the site; after that the same button becomes **Update Live** and every redeploy pushes your latest edits to the **same stable URL** — exactly like Replit.
 - **Project history** — every generation, edit and deploy is saved. The **Projects** panel lets you reopen any past project (code, preview and live link restored) or delete it.
