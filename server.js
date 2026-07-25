@@ -444,13 +444,16 @@ app.post('/api/projects', requireAuth, (req, res) => {
       return res.status(403).json({ error: "You're not a member of that team" });
     }
   }
+  const code = typeof body.code === 'string' ? body.code : (existing?.code || '');
+  const files = body.files && typeof body.files === 'object' ? body.files : (existing?.files || { 'index.html': code });
   const project = {
     id,
     ownerEmail: existing ? existing.ownerEmail : req.auth.email,
     teamId: body.teamId || existing?.teamId || null,
     name: String(body.name || existing?.name || 'Untitled project').slice(0, 120),
     mode: body.mode || existing?.mode || 'website',
-    code: typeof body.code === 'string' ? body.code : (existing?.code || ''),
+    code,
+    files,
     deployedUrl: body.deployedUrl !== undefined ? body.deployedUrl : (existing?.deployedUrl || null),
     createdAt: existing?.createdAt || Date.now(),
     updatedAt: Date.now(),
@@ -650,9 +653,9 @@ function projectName(projectId) {
     .slice(0, 52);
 }
 
-// Best-effort mirror of the current code to a GitHub repo (create or update).
-// Never blocks deployment — failures are logged and ignored.
-async function mirrorToGitHub(name, code) {
+// Best-effort mirror of the project's files to a GitHub repo (create or
+// update each one). Never blocks deployment — failures are logged and ignored.
+async function mirrorToGitHub(name, files) {
   const token = process.env.GITHUB_TOKEN;
   if (!token) return;
   const owner = process.env.GITHUB_OWNER;
@@ -676,19 +679,20 @@ async function mirrorToGitHub(name, code) {
       body: JSON.stringify({ name, private: false, auto_init: true }),
     });
 
-    // Look up the existing file sha (needed to update in place).
-    let sha;
-    const cur = await gh(`/repos/${owner}/${name}/contents/index.html`);
-    if (cur.ok) sha = (await cur.json()).sha;
+    for (const [path, content] of Object.entries(files)) {
+      let sha;
+      const cur = await gh(`/repos/${owner}/${name}/contents/${encodeURIComponent(path)}`);
+      if (cur.ok) sha = (await cur.json()).sha;
 
-    await gh(`/repos/${owner}/${name}/contents/index.html`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        message: 'Update site via AI Web Studio',
-        content: Buffer.from(code, 'utf8').toString('base64'),
-        ...(sha ? { sha } : {}),
-      }),
-    });
+      await gh(`/repos/${owner}/${name}/contents/${encodeURIComponent(path)}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          message: 'Update site via AI Web Studio',
+          content: Buffer.from(content || '', 'utf8').toString('base64'),
+          ...(sha ? { sha } : {}),
+        }),
+      });
+    }
   } catch (err) {
     console.warn('GitHub mirror skipped:', err.message);
   }
@@ -696,12 +700,15 @@ async function mirrorToGitHub(name, code) {
 
 /**
  * POST /api/deploy-vercel   (requires Authorization: Bearer <token>)
- * Body:    { projectId?: string, userId?: string, code: string }
+ * Body:    { projectId?: string, userId?: string, code: string, files?: object }
+ *   files (optional) — a multi-file project { path: content }; when absent,
+ *   falls back to a single index.html made from `code`.
  * Returns: { url: string } — the live production URL (stable across updates)
  */
 app.post('/api/deploy-vercel', requireAuth, async (req, res) => {
-  const { projectId, code } = req.body || {};
-  if (!code) {
+  const { projectId, code, files } = req.body || {};
+  const fileMap = files && typeof files === 'object' && Object.keys(files).length ? files : { 'index.html': code };
+  if (!fileMap['index.html']) {
     return res.status(400).json({ error: 'code is required' });
   }
 
@@ -721,9 +728,9 @@ app.post('/api/deploy-vercel', requireAuth, async (req, res) => {
       body: JSON.stringify({
         name,
         target: 'production', // production → stable <name>.vercel.app URL
-        files: [
-          { file: 'index.html', data: Buffer.from(code, 'utf8').toString('base64'), encoding: 'base64' },
-        ],
+        files: Object.entries(fileMap).map(([file, data]) => ({
+          file, data: Buffer.from(data || '', 'utf8').toString('base64'), encoding: 'base64',
+        })),
         projectSettings: { framework: null },
       }),
     });
@@ -735,7 +742,7 @@ app.post('/api/deploy-vercel', requireAuth, async (req, res) => {
     }
 
     // Mirror to GitHub in the background (does not delay the response).
-    mirrorToGitHub(name, code);
+    mirrorToGitHub(name, fileMap);
 
     // Prefer the stable production alias; fall back to the project domain.
     const alias = Array.isArray(data.alias) && data.alias.length ? data.alias[0] : `${name}.vercel.app`;
@@ -786,7 +793,8 @@ wss.on('connection', (ws, req) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
     if (msg.type === 'code_update' && typeof msg.code === 'string') {
-      const payload = JSON.stringify({ type: 'code_update', code: msg.code, fromEmail: email });
+      const file = typeof msg.file === 'string' ? msg.file.slice(0, 200) : 'index.html';
+      const payload = JSON.stringify({ type: 'code_update', file, code: msg.code, fromEmail: email });
       for (const [peer] of room) {
         if (peer !== ws && peer.readyState === peer.OPEN) peer.send(payload);
       }

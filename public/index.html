@@ -489,13 +489,15 @@
       <!-- Code pane -->
       <div id="pane-code" class="view-hidden flex-1 overflow-hidden bg-[#0a0a12]">
         <div class="flex h-full">
-          <!-- Faux file tree -->
-          <div class="hidden w-44 shrink-0 border-r border-white/5 p-3 lg:block">
-            <p class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">Project files</p>
-            <div class="flex items-center gap-2 rounded-lg bg-brand-500/15 px-2.5 py-1.5 text-xs font-medium text-brand-200">
-              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/></svg>
-              index.html
+          <!-- File tree (real multi-file projects) -->
+          <div class="hidden w-48 shrink-0 flex-col border-r border-white/5 p-3 lg:flex">
+            <div class="mb-2 flex items-center justify-between">
+              <p class="text-[10px] font-semibold uppercase tracking-widest text-slate-600">Project files</p>
+              <button id="btn-new-file" class="btn rounded p-0.5 text-slate-500 hover:text-white" title="New file">
+                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              </button>
             </div>
+            <div id="file-tree" class="nice-scroll flex-1 space-y-0.5 overflow-y-auto"></div>
           </div>
           <textarea
             id="code-editor"
@@ -849,7 +851,9 @@
     projectName: null,
     buildMode: 'website',   // 'website' | 'canvas' — chosen on the hero screen
     projectMode: 'website', // locked in for the current project once a build starts
-    code: '',
+    files: { 'index.html': '' }, // real multi-file project — path -> content
+    activeFile: 'index.html',
+    code: '',                    // always mirrors files[activeFile] for back-compat
     credits: CREDIT_REFILL,      // set for real by initCredits()
     creditsResetAt: 0,           // set for real by initCredits()
     busy: false,
@@ -900,6 +904,8 @@
     overlayTitle:  $('#overlay-title'),
     overlaySub:    $('#overlay-sub'),
     codeEditor:    $('#code-editor'),
+    fileTree:      $('#file-tree'),
+    btnNewFile:    $('#btn-new-file'),
     presenceStack: $('#presence-stack'),
     btnCopy:       $('#btn-copy'),
     copyLabel:     $('#copy-label'),
@@ -1116,6 +1122,14 @@
   }
 
   function renderCredits() {
+    if (usingOwnModel()) {
+      el.planBadge.innerHTML = `
+        <svg class="h-3.5 w-3.5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+        <span class="text-emerald-300">Unlimited</span>
+        <span class="mx-0.5 hidden h-3 w-px bg-white/15 sm:inline-block"></span>
+        <span class="hidden text-slate-400 sm:inline">own model</span>`;
+      return;
+    }
     const days = daysToRefill();
     const low = state.credits <= 0;
     el.planBadge.innerHTML = `
@@ -1126,6 +1140,7 @@
   }
 
   function creditsInfo() {
+    if (usingOwnModel()) { toast('Using your own model — unlimited generations, no credits used', 'info'); return; }
     toast(`${state.credits} credits left · ${CREDIT_REFILL} more in ${daysToRefill()} day(s)`, state.credits > 0 ? 'info' : 'error');
   }
 
@@ -1250,11 +1265,90 @@
     if (el.mNavThumb) el.mNavThumb.style.transform = chat ? 'translateX(0)' : 'translateX(100%)';
   }
 
-  // ---------- Preview & code sync ----------
-  function renderOutput(code) {
-    state.code = code;
-    el.iframe.srcdoc = code;
-    el.codeEditor.value = code;
+  // ---------- Multi-file projects: files, tree, bundled preview ----------
+  function loadFilesIntoWorkspace(files) {
+    state.files = { ...files };
+    if (state.files['index.html'] === undefined) {
+      const firstKey = Object.keys(state.files)[0];
+      state.files['index.html'] = firstKey ? state.files[firstKey] : '';
+    }
+    state.activeFile = 'index.html';
+    state.code = state.files['index.html'];
+    el.codeEditor.value = state.code;
+    renderFileTree();
+    refreshPreview();
+  }
+
+  function setActiveFile(name) {
+    if (state.files[name] === undefined) return;
+    state.activeFile = name;
+    el.codeEditor.value = state.files[name];
+    renderFileTree();
+  }
+
+  function renderFileTree() {
+    el.fileTree.innerHTML = '';
+    Object.keys(state.files)
+      .sort((a, b) => (a === 'index.html' ? -1 : b === 'index.html' ? 1 : a.localeCompare(b)))
+      .forEach((name) => {
+        const active = name === state.activeFile;
+        const row = document.createElement('div');
+        row.className = `group flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium ${active ? 'bg-brand-500/15 text-brand-200' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`;
+        row.innerHTML = `
+          <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/></svg>
+          <span class="min-w-0 flex-1 truncate"></span>
+          ${name !== 'index.html' ? '<button class="file-del hidden shrink-0 text-slate-600 hover:text-rose-300 group-hover:block" title="Delete file">✕</button>' : ''}`;
+        row.querySelector('span').textContent = name;
+        row.addEventListener('click', () => setActiveFile(name));
+        if (name !== 'index.html') {
+          row.querySelector('.file-del').addEventListener('click', (e) => { e.stopPropagation(); deleteFile(name); });
+        }
+        el.fileTree.appendChild(row);
+      });
+  }
+
+  function newFile() {
+    const name = (window.prompt('New file name (e.g. style.css, script.js, about.html):') || '').trim();
+    if (!name) return;
+    if (state.files[name] !== undefined) { toast('A file with that name already exists', 'error'); return; }
+    if (!/^[\w.\-]+$/.test(name)) { toast('Use only letters, numbers, dots and dashes', 'error'); return; }
+    state.files[name] = name.endsWith('.css') ? '/* styles */' : name.endsWith('.js') ? '// script' : '<!-- new file -->';
+    setActiveFile(name);
+    refreshPreview();
+    saveProject();
+    toast(`Created ${name} — link it from index.html to use it`, 'success');
+  }
+
+  function deleteFile(name) {
+    if (name === 'index.html') return;
+    delete state.files[name];
+    if (state.activeFile === name) setActiveFile('index.html'); else renderFileTree();
+    refreshPreview();
+    saveProject();
+    toast(`Deleted ${name}`);
+  }
+
+  // Preview is a single iframe, so local <link href="x.css"> / <script src="x.js">
+  // that match a project file get inlined — the rest of index.html is untouched.
+  function bundleForPreview() {
+    let html = state.files['index.html'] || '';
+    html = html.replace(/<link\b[^>]*href=["']([^"']+)["'][^>]*>/gi, (tag, href) => {
+      if (!/rel=["']stylesheet["']/i.test(tag)) return tag;
+      const name = href.replace(/^\.?\//, '');
+      return state.files[name] !== undefined ? `<style>\n${state.files[name]}\n</style>` : tag;
+    });
+    html = html.replace(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>\s*<\/script>/gi, (tag, src) => {
+      const name = src.replace(/^\.?\//, '');
+      return state.files[name] !== undefined ? `<script>\n${state.files[name]}\n<\/script>` : tag;
+    });
+    return html;
+  }
+  function refreshPreview() {
+    el.iframe.srcdoc = bundleForPreview();
+  }
+
+  function renderOutput(code, files) {
+    loadFilesIntoWorkspace(files && Object.keys(files).length ? files : { 'index.html': code });
     el.overlay.classList.add('view-hidden');
     el.btnDownload.disabled = false;
     el.btnDeploy.disabled = false;
@@ -1292,7 +1386,7 @@
       ws.onmessage = (e) => {
         let msg; try { msg = JSON.parse(e.data); } catch { return; }
         if (msg.type === 'presence') renderPresence(msg.users);
-        else if (msg.type === 'code_update') applyRemoteCode(msg.code);
+        else if (msg.type === 'code_update') applyRemoteCode(msg.file || 'index.html', msg.code);
       };
       ws.onclose = () => { if (collab.ws === ws) { collab.ws = null; renderPresence([]); } };
       ws.onerror = () => {};
@@ -1319,10 +1413,13 @@
       el.presenceStack.appendChild(av);
     });
   }
-  function applyRemoteCode(code) {
-    state.code = code;
-    el.iframe.srcdoc = code;
-    if (document.activeElement !== el.codeEditor) el.codeEditor.value = code;
+  function applyRemoteCode(file, code) {
+    const isNewFile = state.files[file] === undefined;
+    state.files[file] = code;
+    if (file === 'index.html') state.code = code;
+    if (isNewFile) renderFileTree();
+    if (file === state.activeFile && document.activeElement !== el.codeEditor) el.codeEditor.value = code;
+    refreshPreview();
   }
 
   // Debounced: broadcast local edits to collaborators, refresh the live
@@ -1330,14 +1427,16 @@
   let codeEditTimer = null;
   el.codeEditor.addEventListener('input', () => {
     const val = el.codeEditor.value;
+    const file = state.activeFile;
     clearTimeout(codeEditTimer);
     codeEditTimer = setTimeout(() => {
-      state.code = val;
-      el.iframe.srcdoc = val;
-      el.btnDownload.disabled = !val;
+      state.files[file] = val;
+      if (file === 'index.html') state.code = val;
+      refreshPreview();
+      el.btnDownload.disabled = !state.files['index.html'];
       updateDeployButton();
       if (collab.ws && collab.ws.readyState === WebSocket.OPEN) {
-        collab.ws.send(JSON.stringify({ type: 'code_update', code: val }));
+        collab.ws.send(JSON.stringify({ type: 'code_update', file, code: val }));
       }
       saveProject();
     }, 400);
@@ -1406,7 +1505,7 @@
 
   async function apiDeploy() {
     if (!state.auth?.user) throw Object.assign(new Error('Sign in required'), { authRequired: true });
-    const payload = { projectId: state.projectId, userId: state.userId, code: state.code };
+    const payload = { projectId: state.projectId, userId: state.userId, code: state.code, files: state.files };
     try {
       const res = await fetch(API.deploy, {
         method: 'POST',
@@ -1504,7 +1603,9 @@
       addLogLine(block, 'Rebuilding styles…', 'run');
       await new Promise((r) => setTimeout(r, 450));
       addLogLine(block, 'Complete! ✓ Changes applied', 'ok');
-      renderOutput(code);
+      // Preserve any other project files (style.css, script.js…) — the AI
+      // only rewrites index.html on a refine.
+      renderOutput(code, { ...state.files, 'index.html': code });
       setBuildStatus('Ready', 'ok');
       saveProject();
       addAssistantMessage(
@@ -1577,27 +1678,85 @@
   }
 
   // ---------- Download ----------
+  // Minimal ZIP writer (store method, no compression) — used to download
+  // multi-file projects without needing any external library.
+  function crc32(str) {
+    const bytes = new TextEncoder().encode(str);
+    let crc = ~0;
+    for (let i = 0; i < bytes.length; i++) {
+      crc ^= bytes[i];
+      for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+    return (~crc) >>> 0;
+  }
+  function buildZip(files) {
+    const enc = new TextEncoder();
+    const chunks = [], central = [];
+    let offset = 0;
+    Object.entries(files).forEach(([name, content]) => {
+      const nameBytes = enc.encode(name);
+      const dataBytes = enc.encode(content || '');
+      const crc = crc32(content || '');
+      const size = dataBytes.length;
+
+      const local = new DataView(new ArrayBuffer(30));
+      local.setUint32(0, 0x04034b50, true);
+      local.setUint16(4, 20, true);
+      local.setUint32(14, crc, true);
+      local.setUint32(18, size, true);
+      local.setUint32(22, size, true);
+      local.setUint16(26, nameBytes.length, true);
+      chunks.push(new Uint8Array(local.buffer), nameBytes, dataBytes);
+
+      const ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0, 0x02014b50, true);
+      ch.setUint16(4, 20, true);
+      ch.setUint16(6, 20, true);
+      ch.setUint32(16, crc, true);
+      ch.setUint32(20, size, true);
+      ch.setUint32(24, size, true);
+      ch.setUint16(28, nameBytes.length, true);
+      ch.setUint32(42, offset, true);
+      central.push(new Uint8Array(ch.buffer), nameBytes);
+
+      offset += 30 + nameBytes.length + dataBytes.length;
+    });
+    const centralStart = offset;
+    const centralSize = central.reduce((n, c) => n + c.length, 0);
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true);
+    end.setUint16(8, Object.keys(files).length, true);
+    end.setUint16(10, Object.keys(files).length, true);
+    end.setUint32(12, centralSize, true);
+    end.setUint32(16, centralStart, true);
+    return new Blob([...chunks, ...central, new Uint8Array(end.buffer)], { type: 'application/zip' });
+  }
+
   function downloadCode() {
-    if (!state.code) { toast('Nothing to download yet', 'error'); return; }
-    const blob = new Blob([state.code], { type: 'text/html' });
+    if (!state.files['index.html']) { toast('Nothing to download yet', 'error'); return; }
+    const names = Object.keys(state.files);
+    const multi = names.length > 1;
+    const blob = multi ? buildZip(state.files) : new Blob([state.files['index.html']], { type: 'text/html' });
+    const filename = `${state.projectId || 'ai-web-studio-project'}.${multi ? 'zip' : 'html'}`;
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `${state.projectId || 'ai-web-studio-project'}.html`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(a.href);
-    toast('index.html downloaded 📦', 'success');
+    toast(`${filename} downloaded 📦`, 'success');
   }
 
-  // ---------- Copy code ----------
+  // ---------- Copy code (whichever file is open in the editor) ----------
   async function copyCode() {
-    if (!state.code) return;
+    const content = state.files[state.activeFile] || '';
+    if (!content) return;
     try {
-      await navigator.clipboard.writeText(state.code);
+      await navigator.clipboard.writeText(content);
     } catch {
       const ta = document.createElement('textarea');
-      ta.value = state.code;
+      ta.value = content;
       document.body.appendChild(ta);
       ta.select();
       document.execCommand('copy');
@@ -1605,7 +1764,7 @@
     }
     el.copyLabel.textContent = 'Copied!';
     setTimeout(() => { el.copyLabel.textContent = 'Copy Code'; }, 1600);
-    toast('Code copied to clipboard', 'success');
+    toast(`${state.activeFile} copied to clipboard`, 'success');
   }
 
   // ---------- New project ----------
@@ -1614,11 +1773,14 @@
     state.projectId = null;
     state.projectName = null;
     state.projectMode = state.buildMode;
+    state.files = { 'index.html': '' };
+    state.activeFile = 'index.html';
     state.code = '';
     state.deployedUrl = null;
     state.attachments = [];
     clarify = null; scoreNode = null;
     renderAttachments();
+    renderFileTree();
     el.chatStream.innerHTML = '';
     el.codeEditor.value = '';
     el.iframe.srcdoc = '';
@@ -1692,6 +1854,7 @@
       name: state.projectName || 'Untitled project',
       mode: state.projectMode,
       code: state.code,
+      files: state.files,
       deployedUrl: state.deployedUrl || null,
       teamId: state.activeTeamId || null,
     };
@@ -1731,7 +1894,7 @@
     closeProjects();
     showWorkspace();
     setTab('preview');
-    renderOutput(p.code);
+    renderOutput(p.code, p.files);
     connectCollab(p.id);
     setBuildStatus('Ready', 'ok');
     addAssistantMessage(`Reopened “${p.name}”. Tell me what you'd like to change.`);
@@ -2119,12 +2282,20 @@
     return state.models.find((m) => m.id === state.activeModelId) || null;
   }
 
+  // Bring-your-own-key: when a custom model is active, the build calls
+  // the user's own API directly — not the platform's — so credits never
+  // apply and there's no generation limit.
+  function usingOwnModel() {
+    return !!activeModel();
+  }
+
   function selectModel(id) {
     state.activeModelId = id; // null = server default
     persistModels();
     renderModels();
+    renderCredits();
     const m = activeModel();
-    toast(m ? `Using “${m.label}”` : 'Using server default model', 'success');
+    toast(m ? `Using “${m.label}” — unlimited, no credits used` : 'Using server default model', 'success');
   }
 
   function deleteModel(id) {
@@ -2132,6 +2303,7 @@
     if (state.activeModelId === id) state.activeModelId = null;
     persistModels();
     renderModels();
+    renderCredits();
     toast('Model removed');
   }
 
@@ -3432,8 +3604,8 @@ loop();
       addLogLine(sblock, 'Complete! ✓ Build succeeded', 'ok');
       renderOutput(code);
       setBuildStatus('Ready', 'ok');
-      state.credits = Math.max(0, state.credits - GENERATION_COST);
-      saveCredits(); renderCredits(); saveProject();
+      if (!usingOwnModel()) { state.credits = Math.max(0, state.credits - GENERATION_COST); saveCredits(); renderCredits(); }
+      saveProject();
       if (isCanvas) {
         addAssistantMessage(source === 'mock'
           ? "Here's a first playable version from the demo engine. Add your own model in Settings for full AI builds. Try it out on the right — when it feels right, hit **Export to AI Builder** to make it deployable."
@@ -3493,7 +3665,7 @@ loop();
     if (state.busy) return;
     const prompt = (rawPrompt || '').trim();
     if (!prompt) { toast('Describe what you want to build first ✍️', 'error'); el.heroPrompt.focus(); return; }
-    if (state.credits < GENERATION_COST) {
+    if (!usingOwnModel() && state.credits < GENERATION_COST) {
       toast(`Out of credits — ${CREDIT_REFILL} more free in ${daysToRefill()} day(s) ⏳`, 'error');
       return;
     }
@@ -3582,7 +3754,8 @@ loop();
   el.mailboxBackdrop.addEventListener('click', closeMailbox);
   $('#btn-close-mailbox').addEventListener('click', closeMailbox);
   el.btnHome.addEventListener('click', () => { if (!state.busy) showHero(); });
-  el.btnRefresh.addEventListener('click', () => { if (state.code) el.iframe.srcdoc = state.code; });
+  el.btnRefresh.addEventListener('click', () => { if (state.files['index.html']) refreshPreview(); });
+  el.btnNewFile.addEventListener('click', newFile);
 
   // Projects modal
   el.projectsBackdrop.addEventListener('click', closeProjects);
