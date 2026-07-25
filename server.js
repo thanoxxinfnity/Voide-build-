@@ -764,6 +764,42 @@ app.post('/api/deploy-vercel', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/deploy-vercel/domain   (requires Authorization: Bearer <token>)
+ * Body:    { projectId: string, domain: string }
+ * Returns: { domain, verified, verification: [...] }
+ *   verified=false means Vercel needs DNS records added first — the
+ *   `verification` array lists exactly what to add (type/name/value).
+ */
+app.post('/api/deploy-vercel/domain', requireAuth, async (req, res) => {
+  const { projectId, domain } = req.body || {};
+  if (!domain) return res.status(400).json({ error: 'domain is required' });
+
+  const token = process.env.VERCEL_TOKEN;
+  if (!token) return res.status(501).json({ error: 'VERCEL_TOKEN not configured' });
+
+  const name = projectName(projectId);
+  const teamId = process.env.VERCEL_TEAM_ID;
+  const qs = teamId ? `?teamId=${encodeURIComponent(teamId)}` : '';
+
+  try {
+    const r = await fetch(`https://api.vercel.com/v10/projects/${encodeURIComponent(name)}/domains${qs}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: domain }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      console.error('Vercel domain error:', r.status, JSON.stringify(data).slice(0, 300));
+      return res.status(502).json({ error: data?.error?.message || 'Could not add that domain' });
+    }
+    return res.json({ domain: data.name, verified: !!data.verified, verification: data.verification || [] });
+  } catch (err) {
+    console.error('domain attach failed:', err.message);
+    return res.status(502).json({ error: 'Vercel unreachable' });
+  }
+});
+
 /* ------------------------------------------------------------------ */
 /*  Real-time collab — live presence + live code sync over WebSocket. */
 /*  One "room" per projectId. Anyone who can access the project (its  */

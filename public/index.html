@@ -843,6 +843,16 @@
           </button>
           <button id="btn-done-modal" class="btn glass rounded-xl px-4 py-2.5 text-sm font-medium text-slate-200 hover:text-white">Done</button>
         </div>
+
+        <!-- Custom domain -->
+        <div class="mt-5 w-full border-t border-white/10 pt-4 text-left">
+          <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Custom domain</p>
+          <div class="flex gap-2">
+            <input id="domain-input" type="text" placeholder="www.yoursite.com" class="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+            <button id="btn-add-domain" class="btn glass shrink-0 rounded-lg px-3.5 py-2 text-sm font-semibold text-slate-200 hover:text-white">Add</button>
+          </div>
+          <div id="domain-result" class="view-hidden mt-3 space-y-2 rounded-lg border border-white/10 bg-black/25 p-3 text-xs"></div>
+        </div>
       </div>
 
       <!-- State: error -->
@@ -876,6 +886,7 @@
   const API = {
     generate: '/api/generate-code',
     deploy:   '/api/deploy-vercel',
+    domain:   '/api/deploy-vercel/domain',
     projects: '/api/projects',
     teams:    '/api/teams',
     inbox:    '/api/inbox',
@@ -1050,6 +1061,9 @@
     btnDoneModal:  $('#btn-done-modal'),
     btnVisit:      $('#btn-visit-site'),
     btnCopyUrl:    $('#btn-copy-url'),
+    domainInput:   $('#domain-input'),
+    btnAddDomain:  $('#btn-add-domain'),
+    domainResult:  $('#domain-result'),
     btnRetry:      $('#btn-retry-deploy'),
     // mobile
     mTabChat:      $('#m-tab-chat'),
@@ -1726,6 +1740,8 @@
       setModalState('success');
       updateDeployButton();
       saveProject();
+      el.domainInput.value = '';
+      el.domainResult.classList.add('view-hidden');
       addAssistantMessage(`🚀 ${wasLive ? 'Updated' : 'Deployed'}! Your site is live at ${url}`);
       toast(`${wasLive ? 'Update' : 'Deployment'} successful 🚀`, 'success');
     } catch (err) {
@@ -1733,6 +1749,46 @@
       el.deployErrMsg.textContent = err.message || 'Something went wrong while publishing your site.';
       setModalState('error');
       toast('Deployment failed', 'error');
+    }
+  }
+
+  // ---------- Custom domain ----------
+  async function addCustomDomain() {
+    const domain = el.domainInput.value.trim().toLowerCase();
+    if (!domain) return;
+    el.btnAddDomain.disabled = true;
+    el.domainResult.classList.remove('view-hidden');
+    el.domainResult.innerHTML = '<p class="text-slate-400">Adding domain…</p>';
+    try {
+      const res = await fetch(API.domain, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ projectId: state.projectId, domain }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not add that domain');
+
+      if (data.verified) {
+        el.domainResult.innerHTML = `<p class="text-emerald-300">✓ ${data.domain} is verified and live.</p>`;
+        toast('Custom domain connected 🌐', 'success');
+      } else {
+        const rows = (data.verification || []).map((v) =>
+          `<div class="rounded border border-white/10 bg-black/30 p-2 font-mono">
+             <div class="text-slate-500">${v.type} record</div>
+             <div class="text-slate-300">${v.domain || domain}</div>
+             <div class="text-brand-300">${v.value}</div>
+           </div>`
+        ).join('');
+        el.domainResult.innerHTML = `
+          <p class="text-amber-300">⚠ Add this DNS record at your domain registrar, then it'll go live automatically:</p>
+          ${rows || '<p class="text-slate-400">Check your registrar\'s DNS settings for the record Vercel requested.</p>'}`;
+        toast('Domain added — DNS verification needed', 'info');
+      }
+    } catch (err) {
+      el.domainResult.innerHTML = `<p class="text-rose-300">${err.message}</p>`;
+      toast(err.message, 'error');
+    } finally {
+      el.btnAddDomain.disabled = false;
     }
   }
 
@@ -3931,6 +3987,8 @@ loop();
   el.modalBackdrop.addEventListener('click', closeModal);
   el.btnRetry.addEventListener('click', startDeploy);
   el.btnVisit.addEventListener('click', () => { if (state.deployedUrl) window.open(state.deployedUrl, '_blank', 'noopener'); });
+  el.btnAddDomain.addEventListener('click', addCustomDomain);
+  el.domainInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addCustomDomain(); });
   el.btnCopyUrl.addEventListener('click', async () => {
     if (!state.deployedUrl) return;
     try { await navigator.clipboard.writeText(state.deployedUrl); } catch {}

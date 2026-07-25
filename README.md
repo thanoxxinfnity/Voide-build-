@@ -19,6 +19,7 @@ A white-label, single-page **AI Website Builder** — dark theme, glassmorphism,
 - **Multi-file projects** — the Code Editor has a real file tree (`+` to add a file). AI generation still produces one `index.html`, but you can add `style.css`, `script.js`, extra pages, etc. by hand — local `<link href>`/`<script src>` tags that match a project file are inlined automatically for the Live Preview. Download gives a single `.html` for one-file projects or a `.zip` (built client-side, no library) once there's more than one file. Deploy and GitHub-mirror both publish every file.
 - **Free credits** — every account starts with **499 credits** and gets a fresh **499 every 15 days**, fully automatic. The header badge shows how many are left and the days until the next refill; tap it any time for a reminder.
 - **Deploy & Update** — one-click **Deploy Live** publishes the site; after that the same button becomes **Update Live** and every redeploy pushes your latest edits to the **same stable URL** — exactly like Replit.
+- **Custom domain** — once deployed, add your own domain right from the success dialog. If it needs DNS verification, the exact record to add at your registrar is shown; once that record resolves, Vercel connects it automatically.
 - **Project history** — every generation, edit and deploy is saved. The **Projects** panel lets you reopen any past project (code, preview and live link restored) or delete it.
 - **Chat-driven edits** — ask for a change in the Build Console and the AI rewrites the full site with your change applied; hit *Update Live* to push it live again.
 - **Agentic build flow** — a prompt **clarity score** (0–100); below 95 the AI runs a short **clarification quiz** (option chips + free-text "Other", any language) until the brief is clear, then builds **step-by-step** with **thinking bubbles** narrating each stage ("analyzing… designing… writing HTML… animating… reviewing"). *Thorough mode* paces it deliberately for higher quality.
@@ -45,7 +46,8 @@ POST   /api/auth/google     { idToken }                               →  { tok
 
 # Everything below requires Authorization: Bearer <token> — signed out gets 401.
 POST   /api/generate-code   { prompt, provider?, mode? }              →  { code }
-POST   /api/deploy-vercel   { projectId, code }                       →  { url }
+POST   /api/deploy-vercel   { projectId, code, files? }                →  { url }
+POST   /api/deploy-vercel/domain { projectId, domain }                 →  { domain, verified, verification }
 GET    /api/projects        →  { projects: [...] }         (yours + any team's)
 POST   /api/projects        { id?, name, mode, code, deployedUrl?, teamId? }  →  { project }
 DELETE /api/projects/:id    →  { ok: true }
