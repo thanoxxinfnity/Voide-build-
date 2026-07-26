@@ -200,6 +200,18 @@ function requireAuth(req, res, next) {
   next();
 }
 
+// Gates owner-only routes (e.g. the admin terminal) behind a specific email,
+// set via ADMIN_EMAIL. Fails closed: with no ADMIN_EMAIL configured, this
+// rejects EVERYONE, including a signed-in user — there is no default admin.
+function requireAdmin(req, res, next) {
+  const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+  if (!adminEmail || !req.auth?.email || req.auth.email !== adminEmail) {
+    console.warn(`admin route denied for ${req.auth?.email || 'anonymous'} on ${req.path}`);
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+}
+
 app.post('/api/auth/signup', (req, res) => {
   const email = String((req.body || {}).email || '').trim().toLowerCase();
   const password = String((req.body || {}).password || '');
@@ -1221,6 +1233,19 @@ app.post('/api/text-to-speech', requireAuth, async (req, res) => {
   const audio = await hfGenerateSpeech(text);
   if (!audio) return res.status(501).json({ error: 'Voice needs HF_API_TOKEN configured (ai4bharat/indic-parler-tts)' });
   res.json({ audio });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Admin-only terminal — the URL is never shipped in the page/bundle. */
+/*  It's handed to the browser ONLY after the server verifies (server-*/
+/*  side, via requireAdmin) that the signed-in user is ADMIN_EMAIL —   */
+/*  every other signed-in user, and every signed-out visitor, gets a  */
+/*  plain 403 with no hint the feature exists.                         */
+/* ------------------------------------------------------------------ */
+app.get('/api/admin/terminal-url', requireAuth, requireAdmin, (req, res) => {
+  const url = process.env.TERMINAL_URL || '';
+  if (!url) return res.status(501).json({ error: 'TERMINAL_URL not configured' });
+  res.json({ url });
 });
 
 /* ------------------------------------------------------------------ */
