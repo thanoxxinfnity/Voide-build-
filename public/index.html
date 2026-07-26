@@ -725,7 +725,7 @@
         <div id="secrets-list" class="space-y-2"></div>
 
         <div class="mt-4 grid grid-cols-1 gap-2 rounded-2xl border border-white/10 bg-black/25 p-4 sm:grid-cols-[1fr_1fr_auto]">
-          <input id="sf-name" type="text" placeholder="NAME (e.g. STRIPE_KEY)" class="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+          <input id="sf-name" type="text" placeholder="NAME (e.g. API_KEY)" class="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
           <input id="sf-value" type="password" placeholder="value" autocomplete="off" class="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
           <button id="btn-add-secret" class="btn btn-primary rounded-lg px-4 py-2 text-sm font-semibold text-white">Add</button>
         </div>
@@ -3770,6 +3770,21 @@ loop();
   // Slower, deliberate pacing in Thorough mode.
   const pace = (ms) => new Promise((r) => setTimeout(r, state.prefs.thorough ? ms : Math.round(ms * 0.3)));
 
+  // A "thinking step" that never lies about progress: it shows for at
+  // least `minMs` (so it's readable) but instantly moves on the moment
+  // the real API call finishes — instead of Replit-killing fixed delays
+  // that either drag out a fast response or freeze during a slow one.
+  function paceStep(minMs, isDone) {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const tick = () => {
+        if (isDone() || Date.now() - start >= minMs) return resolve();
+        setTimeout(tick, 120);
+      };
+      tick();
+    });
+  }
+
   // ---------- Attachments (images / 3D models / assets) ----------
   function handleFiles(list) {
     Array.from(list || []).forEach((f) => {
@@ -4043,23 +4058,26 @@ loop();
 
     const genPromise = apiGenerateCode(composeBuildPrompt(finalPrompt), state.projectMode); // start the real call now
     genPromise.catch(() => {}); // it's awaited below — this just silences the early-rejection console noise
+    let settled = false;
+    genPromise.then(() => { settled = true; }, () => { settled = true; });
+    const buildStartedAt = Date.now();
 
-    // Deep-analysis phase — deliberate, step-by-step reasoning shown to the
-    // user (no instant flash answers; the model call runs in parallel).
+    // Deep-analysis phase — real reasoning steps shown to the user, but
+    // never a fixed fake delay: each step shows just long enough to read,
+    // then instantly advances the moment the real model call finishes.
     const think = addThinking('Reading your message carefully…');
-    await pace(1100);
-    setThinking(think, 'Understanding what you really need…');
-    await pace(1100);
-    setThinking(think, 'Breaking the idea into sections & features…');
-    await pace(1000);
-    setThinking(think, 'Choosing layout, colors & typography…');
-    await pace(1000);
+    const analysisMs = state.prefs.thorough ? 750 : 250;
+    await paceStep(analysisMs, () => settled);
+    if (!settled) { setThinking(think, 'Understanding what you really need…'); await paceStep(analysisMs, () => settled); }
+    if (!settled) { setThinking(think, 'Breaking the idea into sections & features…'); await paceStep(analysisMs, () => settled); }
+    if (!settled) { setThinking(think, 'Choosing layout, colors & typography…'); await paceStep(analysisMs, () => settled); }
 
-    setThinking(think, 'Designing the structure…');
-    addAssistantMessage("Here's my plan:");
-    const pblock = createLogBlock();
-    for (const s of planFromPrompt(finalPrompt)) { addLogLine(pblock, s, 'ok'); await pace(220); }
-    await pace(700);
+    if (!settled) {
+      setThinking(think, 'Designing the structure…');
+      addAssistantMessage("Here's my plan:");
+      const pblock = createLogBlock();
+      for (const s of planFromPrompt(finalPrompt)) { addLogLine(pblock, s, 'ok'); if (!settled) await paceStep(150, () => settled); }
+    }
 
     const steps = isCanvas ? [
       'Setting up the canvas & game loop…',
@@ -4077,11 +4095,37 @@ loop();
       'Reviewing, cleaning up & final checks…',
     ];
     const sblock = createLogBlock();
-    for (const s of steps) { setThinking(think, s); addLogLine(sblock, s, 'run'); await pace(950); }
+    const stepMs = state.prefs.thorough ? 650 : 200;
+    for (const s of steps) {
+      if (settled) break;
+      setThinking(think, s);
+      addLogLine(sblock, s, 'run');
+      await paceStep(stepMs, () => settled);
+    }
     setThinking(think, isCanvas ? 'Finalizing your game…' : 'Finalizing your website…');
+
+    // Real generation is taking longer than the scripted steps — instead of
+    // freezing, keep the status alive with a heartbeat + elapsed time, like
+    // watching a real build log rather than a stalled spinner.
+    const tailMessages = [
+      'Still generating — larger sites take a little longer…',
+      'The model is writing the final sections…',
+      'Almost there — polishing the output…',
+      'Just a bit more — thanks for your patience…',
+    ];
+    let tailIdx = 0;
+    const heartbeat = setInterval(() => {
+      if (settled) return;
+      const secs = Math.max(1, Math.round((Date.now() - buildStartedAt) / 1000));
+      const msg = `${tailMessages[tailIdx % tailMessages.length]} (${secs}s)`;
+      setThinking(think, msg);
+      el.overlaySub.textContent = msg; // keep the preview-pane overlay in sync too
+      tailIdx++;
+    }, 2500);
 
     try {
       const { code, source } = await genPromise;
+      clearInterval(heartbeat);
       think.remove();
       addLogLine(sblock, 'Complete! ✓ Build succeeded', 'ok');
       renderOutput(code);
@@ -4103,6 +4147,7 @@ loop();
       updateDeployButton();
       if (state.prefs.autoDeploy && !isCanvas) setTimeout(() => startDeploy(), 500);
     } catch (err) {
+      clearInterval(heartbeat);
       think.remove();
       if (err.authRequired) {
         addLogLine(sblock, 'Build stopped — sign-in required', 'err');
