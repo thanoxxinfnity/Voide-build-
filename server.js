@@ -570,9 +570,13 @@ const SYSTEM_PROMPT = [
   '- No markdown, no code fences, no explanations before or after.',
   '- Inline ALL CSS inside a <style> tag and ALL JS inside a <script> tag — the file must work standalone.',
   '- Modern, beautiful, responsive design that looks great on mobile and desktop.',
-  '- Use semantic HTML, accessible markup, and tasteful animations.',
-  '- Do NOT reference any external files, frameworks, or CDNs — everything self-contained.',
+  '- Use semantic HTML, accessible markup, and tasteful animations (CSS transitions/keyframes + IntersectionObserver reveal-on-scroll by default — every site should feel alive as the user scrolls).',
+  '- Do NOT reference any external files, frameworks, or CDNs — everything self-contained — EXCEPT the two libraries below, which MAY be loaded from their official CDN when the brief calls for them:',
+  '  • three.js (https://unpkg.com/three@0.160.0/build/three.module.js) — for real, code-generated 3D scenes (rotating hero object, particle field, product viewer, WebGL background). Build actual Three.js geometry/materials/lights/camera + a requestAnimationFrame render loop — never reference an external .glb/.obj model file, since none exists; procedurally build shapes (icosahedron, torus, particles, extruded text) or simple primitives composed together.',
+  '  • GSAP + ScrollTrigger (https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js and .../ScrollTrigger.min.js) — for scroll-driven animations (pin sections, parallax, staggered reveals, timeline-based scroll storytelling).',
+  '- Only load three.js / GSAP when the brief actually asks for 3D or rich scroll animation — a simple landing page should stay CDN-free and fast.',
   '- Where a photo or illustration would make the site better, use <img src="ai-img: short vivid description of the image"> (up to 3 per site, always include width/height CSS) — the platform replaces these with real AI-generated images automatically.',
+  '- If the brief mentions a logo/brand mark, use <img src="ai-logo: short description of the logo concept"> once in the header — the platform generates a real logo image for it.',
 ].join('\n');
 
 // Canvas Mode — for building 2D games/interactive graphics with <canvas>.
@@ -758,14 +762,18 @@ async function callWithFallback(chain, system, user, opts) {
 }
 
 // Generate one image via HF (tries each image model), → data URL or null.
-async function hfGenerateImage(prompt) {
+// kind: 'photo' (default) or 'logo' (adds vector/icon/transparent styling to the prompt).
+async function hfGenerateImage(prompt, kind = 'photo') {
   if (!HF_TOKEN) return null;
+  const finalPrompt = kind === 'logo'
+    ? `minimalist vector logo icon, ${prompt}, flat design, clean lines, centered, simple bold shapes, white background, professional brand mark`
+    : String(prompt);
   for (const model of HF_IMAGE_MODELS) {
     try {
       const r = await fetch(`https://router.huggingface.co/hf-inference/models/${model}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${HF_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputs: String(prompt).slice(0, 300) }),
+        body: JSON.stringify({ inputs: finalPrompt.slice(0, 400) }),
       });
       if (!r.ok) { console.warn(`image model ${model} → ${r.status}`); continue; }
       const buf = Buffer.from(await r.arrayBuffer());
@@ -780,26 +788,71 @@ async function hfGenerateImage(prompt) {
 }
 
 // A pretty gradient SVG stand-in when image generation isn't available.
-function placeholderImage(text) {
+function placeholderImage(text, kind = 'photo') {
   const label = String(text || 'image').slice(0, 40).replace(/[<>&"]/g, '');
+  if (kind === 'logo') {
+    const initial = label.trim().charAt(0).toUpperCase() || 'V';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#6366f1"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs><rect width="160" height="160" rx="32" fill="url(#g)"/><text x="80" y="104" font-family="sans-serif" font-size="72" font-weight="700" fill="#fff" text-anchor="middle">${initial}</text></svg>`;
+    return 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+  }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#6366f1"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs><rect width="800" height="500" fill="url(#g)"/><text x="400" y="255" font-family="sans-serif" font-size="26" fill="rgba(255,255,255,.85)" text-anchor="middle">${label}</text></svg>`;
   return 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
 }
 
-// Replace <img src="ai-img: description"> placeholders the model emitted
-// with real HF-generated images (max 3 per site; graceful fallback).
+// Replace <img src="ai-img: description"> / <img src="ai-logo: description">
+// placeholders the model emitted with real HF-generated images (max 3 photos
+// + 1 logo per site; graceful SVG fallback if generation is unavailable).
 async function inlineAiImages(html) {
-  const matches = [...html.matchAll(/src=["']ai-img:\s*([^"']{3,200})["']/gi)];
-  if (!matches.length) return html;
-  const unique = [...new Set(matches.map((m) => m[1].trim()))].slice(0, 3);
   let out = html;
-  for (const desc of unique) {
-    const img = (await hfGenerateImage(desc)) || placeholderImage(desc);
-    out = out.split(`ai-img: ${desc}`).join(img).split(`ai-img:${desc}`).join(img);
+
+  const logoMatches = [...out.matchAll(/src=["']ai-logo:\s*([^"']{2,200})["']/gi)];
+  if (logoMatches.length) {
+    const desc = logoMatches[0][1].trim();
+    const img = (await hfGenerateImage(desc, 'logo')) || placeholderImage(desc, 'logo');
+    out = out.split(`ai-logo: ${desc}`).join(img).split(`ai-logo:${desc}`).join(img);
+    out = out.replace(/src=["']ai-logo:\s*([^"']{2,200})["']/gi, (_, d) => `src="${placeholderImage(d, 'logo')}"`);
   }
-  // Any leftovers (beyond the 3-image budget) get placeholders too.
-  out = out.replace(/src=["']ai-img:\s*([^"']{3,200})["']/gi, (_, d) => `src="${placeholderImage(d)}"`);
+
+  const matches = [...out.matchAll(/src=["']ai-img:\s*([^"']{3,200})["']/gi)];
+  if (matches.length) {
+    const unique = [...new Set(matches.map((m) => m[1].trim()))].slice(0, 3);
+    for (const desc of unique) {
+      const img = (await hfGenerateImage(desc, 'photo')) || placeholderImage(desc, 'photo');
+      out = out.split(`ai-img: ${desc}`).join(img).split(`ai-img:${desc}`).join(img);
+    }
+    // Any leftovers (beyond the 3-image budget) get placeholders too.
+    out = out.replace(/src=["']ai-img:\s*([^"']{3,200})["']/gi, (_, d) => `src="${placeholderImage(d, 'photo')}"`);
+  }
+
   return out;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Text-to-speech — real, human-sounding Indian-accent voice          */
+/*  (AI4Bharat's Indic Parler-TTS, via Hugging Face). Used to read     */
+/*  chat replies aloud on request — not a robotic browser voice.       */
+/* ------------------------------------------------------------------ */
+const HF_TTS_MODEL = process.env.HF_TTS_MODEL || 'ai4bharat/indic-parler-tts';
+const TTS_VOICE_DESC = process.env.HF_TTS_VOICE_DESC
+  || 'Divya speaks with a warm, natural Indian English accent, at a moderate pace with clear expression, in a calm indoor studio with no background noise.';
+
+async function hfGenerateSpeech(text) {
+  if (!HF_TOKEN) return null;
+  try {
+    const r = await fetch(`https://router.huggingface.co/hf-inference/models/${HF_TTS_MODEL}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${HF_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inputs: String(text).slice(0, 900), parameters: { description: TTS_VOICE_DESC } }),
+    });
+    if (!r.ok) { console.warn(`TTS model → ${r.status}`); return null; }
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length < 500) return null;
+    const mime = r.headers.get('content-type') || 'audio/wav';
+    return `data:${mime};base64,${buf.toString('base64')}`;
+  } catch (err) {
+    console.warn(`TTS failed: ${err.message.slice(0, 100)}`);
+    return null;
+  }
 }
 
 /**
@@ -856,15 +909,31 @@ app.post('/api/generate-code', requireAuth, async (req, res) => {
 
 /**
  * POST /api/generate-image   (requires Authorization: Bearer <token>)
- * Body: { prompt } → { image: <data URL> }
- * Direct text-to-image via the Hugging Face image-model chain.
+ * Body: { prompt, kind? 'photo'|'logo' } → { image: <data URL> }
+ * Direct text-to-image (or logo) via the Hugging Face image-model chain —
+ * used for standalone "generate a logo/image" chat requests.
  */
 app.post('/api/generate-image', requireAuth, async (req, res) => {
-  const { prompt } = req.body || {};
+  const { prompt, kind } = req.body || {};
   if (!prompt || !String(prompt).trim()) return res.status(400).json({ error: 'prompt is required' });
-  const img = await hfGenerateImage(prompt);
-  if (!img) return res.status(501).json({ error: 'Image generation needs HF_API_TOKEN configured', image: placeholderImage(prompt) });
+  const k = kind === 'logo' ? 'logo' : 'photo';
+  const img = await hfGenerateImage(prompt, k);
+  if (!img) return res.status(501).json({ error: 'Image generation needs HF_API_TOKEN configured', image: placeholderImage(prompt, k) });
   res.json({ image: img });
+});
+
+/**
+ * POST /api/text-to-speech   (requires Authorization: Bearer <token>)
+ * Body: { text } → { audio: <data URL> }
+ * Reads text aloud with a real, human-sounding Indian-accent voice
+ * (AI4Bharat Indic Parler-TTS) — not a robotic browser voice.
+ */
+app.post('/api/text-to-speech', requireAuth, async (req, res) => {
+  const { text } = req.body || {};
+  if (!text || !String(text).trim()) return res.status(400).json({ error: 'text is required' });
+  const audio = await hfGenerateSpeech(text);
+  if (!audio) return res.status(501).json({ error: 'Voice needs HF_API_TOKEN configured (ai4bharat/indic-parler-tts)' });
+  res.json({ audio });
 });
 
 /* ------------------------------------------------------------------ */

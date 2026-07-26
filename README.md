@@ -100,7 +100,11 @@ GROQ_MODEL       model id (optional, default: llama-3.3-70b-versatile)
 
 Get an HF token free at **huggingface.co → Settings → Access Tokens** (a fine-grained token with "Make calls to Inference Providers" permission).
 
-**Images inside generated sites:** the generator marks photo spots with `ai-img: description` placeholders and the server swaps them for real AI-generated images (FLUX.1-schnell → SDXL fallback) as inline data URLs — or a tasteful gradient SVG when no `HF_API_TOKEN` is set. There's also a direct `POST /api/generate-image { prompt }` endpoint.
+**Images & logos inside generated sites:** the generator marks photo spots with `ai-img: description` and a brand mark with `ai-logo: description`, and the server swaps them for real AI-generated images (FLUX.1-schnell → SDXL fallback) as inline data URLs — or a tasteful placeholder (gradient photo / initial-letter icon) when no `HF_API_TOKEN` is set. You can also ask for one directly in chat — "generate a logo for my coffee shop" renders a real image inline in the conversation (`POST /api/generate-image { prompt, kind: 'photo'|'logo' }`).
+
+**3D & scroll animation:** when a brief calls for it, the model is instructed to load three.js + GSAP/ScrollTrigger from their official CDNs and build a real, code-generated 3D scene (rotating shapes, particle fields, WebGL backgrounds) plus scroll-driven motion — no external `.glb`/`.obj` asset files are referenced, since a plug-and-play "text-to-3D-mesh" API isn't reliably available; everything is procedurally built in-browser instead, which is both more reliable and instantly previewable.
+
+**Voice — real Indian-accent TTS:** every assistant chat message gets a "Listen" button that reads it aloud with a warm, natural Indian-English voice (AI4Bharat's `indic-parler-tts` via Hugging Face) — not a robotic browser voice. Needs `HF_API_TOKEN`; override the model/voice with `HF_TTS_MODEL` / `HF_TTS_VOICE_DESC`. Endpoint: `POST /api/text-to-speech { text }` → `{ audio: <data URL> }`.
 
 ### Custom models (Settings → Add Model)
 

@@ -1339,12 +1339,69 @@
         <span class="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-accent-500 text-white">
           <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
         </span>
-        <div class="glass rounded-2xl rounded-tl-md px-4 py-2.5 text-sm leading-relaxed text-slate-200"></div>
+        <div class="min-w-0">
+          <div class="glass rounded-2xl rounded-tl-md px-4 py-2.5 text-sm leading-relaxed text-slate-200"></div>
+          <button class="btn-listen btn mt-1 flex items-center gap-1 text-[11px] text-slate-500 hover:text-accent-300" title="Listen (Indian voice)">
+            <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+            <span class="listen-label">Listen</span>
+          </button>
+        </div>
       </div>`;
     wrap.querySelector('.glass').textContent = text;
+    const listenBtn = wrap.querySelector('.btn-listen');
+    listenBtn.addEventListener('click', () => playTTS(text, listenBtn));
     el.chatStream.appendChild(wrap);
     scrollChat();
     if (!opts || !opts.silent) recordChat('ai', text);
+  }
+
+  // ---------- Image / logo message bubble (inline in chat) ----------
+  function addImageMessage(dataUrl, caption, opts) {
+    const wrap = document.createElement('div');
+    wrap.className = 'log-line flex justify-start';
+    wrap.innerHTML = `
+      <div class="flex max-w-[85%] gap-2.5">
+        <span class="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-accent-500 text-white">
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+        </span>
+        <div class="glass overflow-hidden rounded-2xl rounded-tl-md p-2">
+          <img class="max-h-64 w-auto rounded-xl" />
+          <div class="msg-caption px-1.5 pt-1.5 text-xs text-slate-400"></div>
+        </div>
+      </div>`;
+    wrap.querySelector('img').src = dataUrl;
+    wrap.querySelector('.msg-caption').textContent = caption || '';
+    el.chatStream.appendChild(wrap);
+    scrollChat();
+    if (!opts || !opts.silent) recordChat('ai', `[image] ${caption || ''}`);
+  }
+
+  // ---------- Voice — real Indian-accent TTS (Hugging Face), not a robot ----------
+  let ttsAudio = null;
+  async function playTTS(text, btn) {
+    if (ttsAudio) { ttsAudio.pause(); ttsAudio = null; }
+    const label = btn.querySelector('.listen-label');
+    const original = label.textContent;
+    label.textContent = 'Loading…';
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/text-to-speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ text: text.slice(0, 900) }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.audio) { toast(d.error || 'Voice unavailable — set HF_API_TOKEN', 'error'); return; }
+      ttsAudio = new Audio(d.audio);
+      label.textContent = 'Playing…';
+      ttsAudio.play();
+      ttsAudio.onended = () => { label.textContent = original; };
+    } catch {
+      toast('Could not play voice — check your connection', 'error');
+    } finally {
+      btn.disabled = false;
+      if (label.textContent === 'Loading…') label.textContent = original;
+    }
   }
 
   // ---------- Chat history: saved per-project in this browser ----------
@@ -3776,9 +3833,17 @@ loop();
   const BUILD_RE = /\b(build|create|make|design|develop|generate|code|website|web ?site|webpage|web ?page|landing ?page|portfolio|dashboard|storefront|e-?commerce|online ?store|blog|saas|app for|site for|game|banao|banau|bana(?:na|de|do|dijiye|iye)?|banwa|website chahiye|site chahiye)\b/i;
   const CHAT_RE  = /^(hi+|hii+|hey+|hello+|yo|sup|salam|salaam|assalam\w*|namaste|namaskar|kaise ho|kese ho|kya haal|kya hal|how are you|what'?s up|good (morning|evening|night|afternoon)|thanks?|thank you|shukriya|dhanyavad|ok+|okay|accha|acha|theek|thik|nice|great|cool|who are you|tum kaun|tum kon|aap kaun|kya kar sakte|what can you do|help|madad)\b/i;
 
+  // A standalone "generate a logo/image/picture" request — answered with a
+  // real image dropped into the chat, not a full website build.
+  const IMAGE_RE = /\b(generate|make|create|draw|design|banao|bana ?do|chahiye)\b.{0,25}\b(logo|image|picture|photo|icon|illustration|wallpaper|artwork)\b|\b(logo|image|picture|photo|icon)\s+(generate|banao|bana ?do|chahiye)\b/i;
+  const SITE_WORD_RE = /\b(website|web ?site|webpage|web ?page|landing ?page|portfolio|dashboard|storefront|e-?commerce|online ?store|blog|saas|app|site)\b/i;
+
   function detectIntent(text) {
     const t = (text || '').trim();
     if (!t) return 'chat';
+    // "generate a logo for X" — image, not a website build, unless the
+    // message is clearly also asking for a whole site.
+    if (IMAGE_RE.test(t) && !SITE_WORD_RE.test(t)) return 'image';
     // Explicit build words anywhere → build
     if (BUILD_RE.test(t)) return 'build';
     // Clear conversational opener and short → chat
@@ -3844,8 +3909,8 @@ loop();
   // A build waiting on the user's answers (Replit-style clarification).
   let pendingBrief = null;
 
-  const CAPABILITY_LINE_EN = "Here's what I can do for you: build complete websites & landing pages, make HTML5 canvas games, edit any project with follow-up messages, and deploy your site live with one click. Just describe what you want to build!";
-  const CAPABILITY_LINE_HI = "Main aapke liye ye kar sakta hoon: poori website / landing page bana sakta hoon, HTML5 canvas games bana sakta hoon, follow-up messages se koi bhi project edit kar sakta hoon, aur one-click me site live deploy kar sakta hoon. Bas batao kya banana hai!";
+  const CAPABILITY_LINE_EN = "Here's what I can do: build complete 3D & scroll-animated websites, generate real AI images & logos, make HTML5 canvas games, edit any project with follow-up messages, deploy live in one click, and even read replies aloud in an Indian voice. Just describe what you want!";
+  const CAPABILITY_LINE_HI = "Main ye kar sakta hoon: 3D aur scroll-animation wali poori website bana sakta hoon, real AI images aur logo generate kar sakta hoon, HTML5 canvas games bana sakta hoon, follow-up messages se project edit kar sakta hoon, one-click deploy kar sakta hoon, aur Indian voice me reply bhi bol ke suna sakta hoon. Bas batao kya chahiye!";
 
   function localChatReply(text) {
     const hi = isHindiish(text);
@@ -3893,6 +3958,45 @@ loop();
     el.btnRefine.disabled = false;
   }
 
+  // ---------- Standalone image / logo generation (rendered inline in chat) ----------
+  async function runImageGen(text) {
+    if (state.busy) return;
+    state.busy = true;
+    el.btnGenerate.disabled = true;
+    el.btnRefine.disabled = true;
+    if (!state.projectName) state.projectName = text.slice(0, 42) + (text.length > 42 ? '…' : '');
+    el.projectLabel.textContent = projectLabelText(state.projectId);
+
+    const kind = /\blogo\b/i.test(text) ? 'logo' : 'photo';
+    const think = addThinking(kind === 'logo' ? 'Designing your logo…' : 'Generating your image…');
+    await pace(600);
+
+    try {
+      const res = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ prompt: text, kind }),
+      });
+      const d = await res.json().catch(() => ({}));
+      think.remove();
+      if (d.image) {
+        addImageMessage(d.image, kind === 'logo' ? 'Your generated logo' : 'Your generated image');
+        if (!d.error) toast(kind === 'logo' ? 'Logo ready ✨' : 'Image ready ✨', 'success');
+        else toast('Using a placeholder — add HF_API_TOKEN for real AI images', 'info');
+      } else {
+        addAssistantMessage(d.error || "Couldn't generate that image — please try again.");
+      }
+    } catch {
+      think.remove();
+      addAssistantMessage("Couldn't reach the server to generate that image — please try again.");
+    }
+
+    saveProject();
+    state.busy = false;
+    el.btnGenerate.disabled = false;
+    el.btnRefine.disabled = false;
+  }
+
   // ---------- Compose the final model prompt ----------
   function composeBuildPrompt(base) {
     let p = base;
@@ -3904,8 +4008,11 @@ loop();
       const list = state.attachments.map((a) => `${a.name} (${a.kind})`).join(', ');
       p += `\n\nThe user attached these assets to reference in the design: ${list}.`;
     }
-    if (/\b(3d|three\.?js|animation|animate|motion|parallax)\b/i.test(base)) {
-      p += `\n\nThis site needs rich animation/3D — you MAY load well-known CDN libraries (e.g. three.js, GSAP) via <script src> for this build.`;
+    if (/\b(3d|three\.?js|animation|animate|motion|parallax|scroll(ing)? effect|scroll animation|webgl)\b/i.test(base)) {
+      p += `\n\nThis site needs rich 3D/scroll animation — load three.js and GSAP+ScrollTrigger from their official CDNs as instructed and build a real, code-generated 3D scene (not an external model file) plus scroll-driven motion throughout the page.`;
+    }
+    if (/\b(logo|brand mark|brand identity)\b/i.test(base)) {
+      p += `\n\nInclude a real logo: put <img src="ai-logo: description"> once in the header/nav.`;
     }
     return p;
   }
@@ -4071,6 +4178,7 @@ loop();
     if (key) { addSecretPromptBlock(key); return; }
 
     if (intent === 'chat') { runChat(prompt); return; }
+    if (intent === 'image') { runImageGen(prompt); return; }
 
     // Replit-style: high confidence → build now; low → ask targeted questions.
     const brief = assessBuildBrief(prompt);
@@ -4120,6 +4228,9 @@ loop();
       runBuild(skip ? base : `${base}\n\nUser's answers to my clarifying questions (follow these carefully): ${v}`);
       return;
     }
+    // A standalone "generate a logo/image" request always renders inline in
+    // chat as a real picture — regardless of whether a site is open.
+    if (detectIntent(v) === 'image') { addUserMessage(v); runImageGen(v); return; }
     // Normal conversation in the build console gets a conversational answer —
     // only edit/build requests touch the website code.
     const editRe = /\b(change|add|remove|delete|update|fix|make|set|replace|swap|edit|badlo|badal|hatao|hata|jodo|jod|kar ?do|karo|lagao|laga|bana|colou?r|background|font|text|title|button|section|image|animation|dark|light|bigger|smaller|upar|neeche)\b/i;
