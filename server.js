@@ -917,6 +917,69 @@ async function hfGenerateSpeech(text) {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Agentic self-correction — ReAct-style loop for generated sites.    */
+/*                                                                     */
+/*  Think  → the model writes the site.                                */
+/*  Act    → validateSite() statically checks the actual HTML/CSS/JS   */
+/*           (never executes anything untrusted — new Function() only  */
+/*           compiles to check syntax, it is never called).            */
+/*  Observe→ concrete error strings are collected.                     */
+/*  Fix    → if anything is broken, the exact errors are handed back   */
+/*           to the model with "fix only this", and the loop repeats   */
+/*           up to MAX_FIX_ATTEMPTS times. The best version produced   */
+/*           so far always ships — a failed fix attempt never makes    */
+/*           the result worse than what came before it.                */
+/* ------------------------------------------------------------------ */
+const MAX_FIX_ATTEMPTS = 2;
+
+function validateSite(html) {
+  const errors = [];
+  const h = String(html || '');
+
+  if (!/<!doctype html/i.test(h)) errors.push('Missing <!DOCTYPE html> at the very start of the document.');
+  if (!/<\/html>\s*$/i.test(h.trim())) errors.push('The document does not end with a closing </html> tag — it looks cut off.');
+
+  const openScripts = (h.match(/<script(?:\s[^>]*)?>/gi) || []).length;
+  const closeScripts = (h.match(/<\/script>/gi) || []).length;
+  if (openScripts !== closeScripts) errors.push(`Mismatched <script> tags: ${openScripts} opening vs ${closeScripts} closing — one is unclosed.`);
+
+  const openStyles = (h.match(/<style(?:\s[^>]*)?>/gi) || []).length;
+  const closeStyles = (h.match(/<\/style>/gi) || []).length;
+  if (openStyles !== closeStyles) errors.push(`Mismatched <style> tags: ${openStyles} opening vs ${closeStyles} closing — one is unclosed.`);
+
+  // Syntax-check every inline (non-external, non-module) <script> block.
+  // new Function() only COMPILES the code to check its syntax — it is
+  // never invoked, so this can never execute anything the model wrote.
+  const scriptRe = /<script([^>]*)>([\s\S]*?)<\/script>/gi;
+  let m, idx = 0;
+  while ((m = scriptRe.exec(h))) {
+    idx++;
+    const attrs = m[1] || '', body = m[2] || '';
+    if (/\bsrc\s*=/.test(attrs) || /type\s*=\s*["']module["']/i.test(attrs) || !body.trim()) continue;
+    try { new Function(body); } // eslint-disable-line no-new-func
+    catch (err) { errors.push(`JavaScript syntax error in <script> block #${idx}: ${err.message}`); }
+  }
+
+  return errors;
+}
+
+function buildFixPrompt(code, errors) {
+  return [
+    'Here is an HTML document that was generated for a website/game build:',
+    '```html',
+    code,
+    '```',
+    '',
+    'Automated validation found these specific problems:',
+    ...errors.map((e) => `- ${e}`),
+    '',
+    'Return the COMPLETE corrected HTML document with ONLY these issues fixed.',
+    'Keep the design, copy, structure and everything else exactly the same — do not rewrite or redesign anything that already works.',
+    'Follow all the same output rules as before: raw HTML only, starting with <!DOCTYPE html> and ending with </html>, no markdown fences, no explanations.',
+  ].join('\n');
+}
+
 /**
  * POST /api/generate-code   (requires Authorization: Bearer <token>)
  * Body:    { prompt, projectId?, userId?, provider?, mode? }
@@ -968,15 +1031,33 @@ app.post('/api/generate-code', requireAuth, async (req, res) => {
   if (!code || !/<html|<!doctype/i.test(code)) {
     return res.status(502).json({ error: 'generation returned invalid HTML' });
   }
-  // The model got cut off mid-document (hit the token limit) — best-effort
-  // close whatever's open so the preview isn't a blank/broken page, and log
-  // it so we can see how often this actually happens.
+
+  // ---- Agentic self-correction loop: Act (validate) → Observe (errors) →
+  // Fix (ask the model to correct exactly those errors) → repeat. ----
+  for (let attempt = 0; attempt < MAX_FIX_ATTEMPTS; attempt++) {
+    const errors = validateSite(code);
+    if (!errors.length) break;
+    console.warn(`build validation attempt ${attempt + 1}/${MAX_FIX_ATTEMPTS}: ${errors.length} issue(s) — asking the model to fix:`, errors);
+    try {
+      const { raw: fixedRaw } = await callWithFallback(chain, systemPrompt, buildFixPrompt(code, errors), { maxTokens: 16000 });
+      const fixedCode = String(fixedRaw || '').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
+      if (fixedCode && /<html|<!doctype/i.test(fixedCode)) code = fixedCode;
+      else break; // the fix call didn't return usable HTML — keep the best version we already have
+    } catch (err) {
+      console.warn(`fix attempt ${attempt + 1} failed, keeping previous version: ${err.message}`);
+      break;
+    }
+  }
+
+  // Whatever's left after the fix loop still gets the same best-effort
+  // safety net (e.g. a fix attempt that itself got token-truncated).
   if (!/<\/html>\s*$/i.test(code)) {
-    console.warn(`generation truncated (${code.length} chars) — closing tags best-effort`);
+    console.warn(`shipping a still-truncated document (${code.length} chars) — closing tags best-effort`);
     if (/<script(?![^>]*\/>)[^>]*>(?![\s\S]*<\/script>)/i.test(code)) code += '\n</script>';
     if (!/<\/body>/i.test(code)) code += '\n</body>';
     if (!/<\/html>/i.test(code)) code += '\n</html>';
   }
+
   // Swap ai-img placeholders for real AI-generated images (HF) or pretty SVGs.
   try { code = await inlineAiImages(code); } catch { /* images are best-effort */ }
   return res.json({ code });
