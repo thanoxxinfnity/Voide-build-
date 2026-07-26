@@ -790,6 +790,26 @@ function defaultChain() {
   return chain;
 }
 
+// Builds the model chain for a request: an "All Models" list (every model
+// the user added, e.g. NVIDIA NIM / OpenAI / Claude / their own OpenRouter
+// key) wins if present — tried one by one, whichever is free/fastest
+// answers — falling back to the built-in HF/Groq chain if every one of the
+// user's own models fails. A single `provider` behaves as before. Neither
+// present → the server default chain.
+function buildChain(provider, providers) {
+  if (Array.isArray(providers) && providers.length) {
+    const userChain = providers
+      .filter((p) => p && p.model)
+      .slice(0, 12) // sane cap — this is a fallback list, not an unbounded fan-out
+      .map((p) => ({ type: p.type || 'openai', endpoint: p.endpoint || '', apiKey: p.apiKey || '', model: p.model }));
+    return [...userChain, ...defaultChain()];
+  }
+  if (provider && provider.model) {
+    return [{ type: provider.type || 'openai', endpoint: provider.endpoint || '', apiKey: provider.apiKey || '', model: provider.model }];
+  }
+  return defaultChain();
+}
+
 // Try each engine in order until one answers.
 async function callWithFallback(chain, system, user, opts) {
   let lastErr = null;
@@ -1102,17 +1122,16 @@ function buildFixPrompt(code, errors) {
  * Returns: { code: string }  — a complete HTML document
  */
 app.post('/api/generate-code', requireAuth, async (req, res) => {
-  const { prompt, provider, mode } = req.body || {};
+  const { prompt, provider, providers, mode } = req.body || {};
   if (!prompt || !prompt.trim()) {
     return res.status(400).json({ error: 'prompt is required' });
   }
   const systemPrompt = mode === 'canvas' ? CANVAS_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
-  // A user-supplied model wins; otherwise the smart fallback chain
-  // (all Hugging Face models one by one, then Groq) handles it.
-  const chain = (provider && provider.model)
-    ? [{ type: provider.type || 'openai', endpoint: provider.endpoint || '', apiKey: provider.apiKey || '', model: provider.model }]
-    : defaultChain();
+  // A user-supplied model wins; "All Models" (providers[]) tries every one
+  // the user added before falling back to the built-in chain; otherwise the
+  // smart fallback chain (all Hugging Face models one by one, then Groq).
+  const chain = buildChain(provider, providers);
 
   if (!chain.length) {
     return res.status(501).json({ error: 'No AI model configured. Add one in Settings → Models, or set HF_API_TOKEN / GROQ_API_KEY in environment variables.' });
@@ -1219,12 +1238,10 @@ const CHAT_SYSTEM_PROMPT = [
 ].join('\n');
 
 app.post('/api/chat', requireAuth, async (req, res) => {
-  const { message, history, provider } = req.body || {};
+  const { message, history, provider, providers } = req.body || {};
   if (!message || !String(message).trim()) return res.status(400).json({ error: 'message is required' });
 
-  const chain = (provider && provider.model)
-    ? [{ type: provider.type || 'openai', endpoint: provider.endpoint || '', apiKey: provider.apiKey || '', model: provider.model }]
-    : defaultChain();
+  const chain = buildChain(provider, providers);
   if (!chain.length) return res.status(501).json({ error: 'no model configured' });
 
   // Fold recent turns into the prompt so replies stay in context.

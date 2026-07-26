@@ -416,6 +416,12 @@
         </span>
       </div>
 
+      <!-- Quick model switcher — pick any added model (or "All Models") without opening Settings -->
+      <div class="flex items-center gap-2 border-b border-white/10 px-4 py-2">
+        <svg class="h-3.5 w-3.5 shrink-0 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 1 2 2v1a7 7 0 0 1 4 6.3V17a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5.7A7 7 0 0 1 10 5V4a2 2 0 0 1 2-2z"/></svg>
+        <select id="quick-model-select" class="min-w-0 flex-1 truncate rounded-lg border border-white/10 bg-black/25 px-2 py-1 text-[11.5px] text-slate-200 outline-none focus:border-brand-400/60"></select>
+      </div>
+
       <!-- Chat / log stream -->
       <div id="chat-stream" class="nice-scroll flex-1 space-y-3 overflow-y-auto px-4 py-4">
         <!-- messages & logs injected by JS -->
@@ -643,6 +649,7 @@
               <option value="anthropic">Anthropic (Claude)</option>
               <option value="gemini">Google (Gemini)</option>
               <option value="openrouter">OpenRouter</option>
+              <option value="nvidia">NVIDIA NIM</option>
               <option value="custom">Other / Custom (OpenAI-compatible)</option>
             </select>
           </div>
@@ -657,6 +664,7 @@
           <div>
             <label class="mb-1 block text-xs font-medium text-slate-400">Model ID</label>
             <input id="mf-model" type="text" placeholder="gpt-4o-mini" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+            <div id="mf-model-suggestions" class="view-hidden mt-1.5 flex flex-wrap gap-1.5"></div>
           </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-slate-400">API Key</label>
@@ -1099,6 +1107,7 @@
     settingsModal:    $('#settings-modal'),
     settingsBackdrop: $('#settings-backdrop'),
     modelsList:       $('#models-list'),
+    quickModelSelect: $('#quick-model-select'),
     modelForm:        $('#model-form'),
     mfType:           $('#mf-type'),
     mfLabel:          $('#mf-label'),
@@ -1106,6 +1115,7 @@
     mfEndpointWrap:   $('#mf-endpoint-wrap'),
     mfEndpointOpt:    $('#mf-endpoint-opt'),
     mfModel:          $('#mf-model'),
+    mfModelSuggestions: $('#mf-model-suggestions'),
     mfKey:            $('#mf-key'),
     secretsList:      $('#secrets-list'),
     sfName:           $('#sf-name'),
@@ -1745,8 +1755,11 @@
     if (!state.auth?.user) throw Object.assign(new Error('Sign in required'), { authRequired: true });
     const model = activeModel();
     const payload = { prompt, projectId: state.projectId, userId: state.userId, mode: mode || 'website' };
-    // Send the user-selected custom model (server proxies the call).
-    if (model) {
+    // Send the user-selected custom model (server proxies the call), or
+    // every added model as a wide fallback chain in "All Models" mode.
+    if (isAllModelsMode() && state.models.length) {
+      payload.providers = allModelProviders();
+    } else if (model) {
       payload.provider = { type: model.type || 'openai', endpoint: model.endpoint, apiKey: model.apiKey, model: model.model };
     }
     try {
@@ -2668,27 +2681,44 @@
     else localStorage.removeItem('aws_active_model');
   }
 
+  const ALL_MODELS_ID = '__all__';
+  function isAllModelsMode() { return state.activeModelId === ALL_MODELS_ID; }
+
   // Returns the provider config for the active custom model, or null
-  // when the server default should be used.
+  // when the server default (or "All Models") should be used.
   function activeModel() {
-    if (!state.activeModelId) return null;
+    if (!state.activeModelId || isAllModelsMode()) return null;
     return state.models.find((m) => m.id === state.activeModelId) || null;
   }
 
-  // Bring-your-own-key: when a custom model is active, the build calls
-  // the user's own API directly — not the platform's — so credits never
-  // apply and there's no generation limit.
+  // "All Models" mode: every model the user has added, tried in order —
+  // whichever one is free/fastest handles the request. Never splits a
+  // single build across models (that risks an inconsistent, half-broken
+  // site); it's a wide fallback chain, not a task-divider.
+  function allModelProviders() {
+    return state.models.map((m) => ({ type: m.type || 'openai', endpoint: m.endpoint, apiKey: m.apiKey, model: m.model, label: m.label }));
+  }
+
+  // Bring-your-own-key: when a custom model (or All Models, with at least
+  // one added) is active, the build calls the user's own API(s) directly —
+  // not the platform's — so credits never apply and there's no limit.
   function usingOwnModel() {
+    if (isAllModelsMode()) return state.models.length > 0;
     return !!activeModel();
   }
 
   function selectModel(id) {
-    state.activeModelId = id; // null = server default
+    state.activeModelId = id; // null = server default, ALL_MODELS_ID = every model
     persistModels();
     renderModels();
+    renderQuickModelSelect();
     renderCredits();
-    const m = activeModel();
-    toast(m ? `Using “${m.label}” — unlimited, no credits used` : 'Using server default model', 'success');
+    if (id === ALL_MODELS_ID) {
+      toast(state.models.length ? `All Models mode — tries all ${state.models.length}, whichever answers first` : 'Add a model first to use All Models', state.models.length ? 'success' : 'error');
+    } else {
+      const m = activeModel();
+      toast(m ? `Using “${m.label}” — unlimited, no credits used` : 'Using server default model', 'success');
+    }
   }
 
   function deleteModel(id) {
@@ -2696,6 +2726,7 @@
     if (state.activeModelId === id) state.activeModelId = null;
     persistModels();
     renderModels();
+    renderQuickModelSelect();
     renderCredits();
     toast('Model removed');
   }
@@ -2706,8 +2737,20 @@
     anthropic:  { model: 'claude-sonnet-4-5',          endpoint: 'https://api.anthropic.com/v1/messages',        optional: true  },
     gemini:     { model: 'gemini-2.0-flash',           endpoint: 'https://generativelanguage.googleapis.com/v1beta', optional: true  },
     openrouter: { model: 'openai/gpt-4o-mini',         endpoint: 'https://openrouter.ai/api/v1',                 optional: true  },
+    nvidia:     { model: 'qwen/qwen2.5-coder-32b-instruct', endpoint: 'https://integrate.api.nvidia.com/v1',      optional: true  },
     custom:     { model: 'model-id',                   endpoint: 'https://your-host/v1',                         optional: false },
   };
+
+  // A few well-known NVIDIA NIM catalog model ids (build.nvidia.com) offered
+  // as one-click suggestions — the field stays freely editable since NVIDIA
+  // adds/renames models over time.
+  const NVIDIA_MODEL_SUGGESTIONS = [
+    'qwen/qwen2.5-coder-32b-instruct',
+    'deepseek-ai/deepseek-r1',
+    'meta/llama-3.3-70b-instruct',
+    'meta/llama-3.1-405b-instruct',
+    'mistralai/mixtral-8x22b-instruct-v0.1',
+  ];
 
   // Adjust the form fields to the selected provider.
   function configureModelForm(type) {
@@ -2715,6 +2758,20 @@
     el.mfModel.placeholder = meta.model;
     el.mfEndpoint.placeholder = meta.endpoint;
     el.mfEndpointOpt.textContent = meta.optional ? '(optional — official endpoint used if blank)' : '';
+    el.mfModelSuggestions.innerHTML = '';
+    if (type === 'nvidia') {
+      el.mfModelSuggestions.classList.remove('view-hidden');
+      NVIDIA_MODEL_SUGGESTIONS.forEach((id) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'chip btn rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white';
+        chip.textContent = id;
+        chip.addEventListener('click', () => { el.mfModel.value = id; });
+        el.mfModelSuggestions.appendChild(chip);
+      });
+    } else {
+      el.mfModelSuggestions.classList.add('view-hidden');
+    }
   }
 
   function showModelForm(model) {
@@ -2760,10 +2817,11 @@
     persistModels();
     hideModelForm();
     renderModels();
+    renderQuickModelSelect();
     toast('Model saved — now active ⚡', 'success');
   }
 
-  const PROVIDER_NAMES = { openai: 'OpenAI', anthropic: 'Claude', gemini: 'Gemini', openrouter: 'OpenRouter', custom: 'Custom' };
+  const PROVIDER_NAMES = { openai: 'OpenAI', anthropic: 'Claude', gemini: 'Gemini', openrouter: 'OpenRouter', nvidia: 'NVIDIA NIM', custom: 'Custom' };
 
   // Ping the model with a ~10-token request so the user can confirm their
   // key + model id work BEFORE spending real credits on a build.
@@ -2825,6 +2883,19 @@
     def.querySelector('.mdl-pick').addEventListener('click', () => selectModel(null));
     el.modelsList.appendChild(def);
 
+    // All Models — every added model as one wide fallback chain.
+    if (state.models.length > 1) {
+      const all = modelRow({
+        id: ALL_MODELS_ID,
+        label: '⚡ All Models',
+        active: isAllModelsMode(),
+        sub: `Tries all ${state.models.length} of your models — whichever answers first wins`,
+        custom: false,
+      });
+      all.querySelector('.mdl-pick').addEventListener('click', () => selectModel(ALL_MODELS_ID));
+      el.modelsList.appendChild(all);
+    }
+
     // User-added models.
     state.models.forEach((m) => {
       const provName = PROVIDER_NAMES[m.type] || 'OpenAI';
@@ -2841,6 +2912,31 @@
       row.querySelector('.mdl-del').addEventListener('click', () => deleteModel(m.id));
       el.modelsList.appendChild(row);
     });
+  }
+
+  // Compact <select> in the chat panel — same choices as Settings → Models,
+  // but reachable without opening the modal.
+  function renderQuickModelSelect() {
+    const sel = el.quickModelSelect;
+    const prevValue = state.activeModelId || '';
+    sel.innerHTML = '';
+    const optDefault = document.createElement('option');
+    optDefault.value = '';
+    optDefault.textContent = '🌐 Server default (auto)';
+    sel.appendChild(optDefault);
+    if (state.models.length > 1) {
+      const optAll = document.createElement('option');
+      optAll.value = ALL_MODELS_ID;
+      optAll.textContent = `⚡ All Models (${state.models.length})`;
+      sel.appendChild(optAll);
+    }
+    state.models.forEach((m) => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = `${m.label} · ${PROVIDER_NAMES[m.type] || 'OpenAI'}`;
+      sel.appendChild(opt);
+    });
+    sel.value = prevValue;
   }
 
   function setSettingsTab(tab) {
@@ -3976,6 +4072,7 @@ loop();
     await pace(700);
     setThinking(think, 'Thinking about the best answer…');
 
+    const chatModel = activeModel();
     let reply = null;
     try {
       const res = await fetch(API.chat, {
@@ -3984,7 +4081,8 @@ loop();
         body: JSON.stringify({
           message: text,
           history: state.chatLog.slice(-10).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text })),
-          provider: activeModel() ? { type: activeModel().type || 'openai', endpoint: activeModel().endpoint, apiKey: activeModel().apiKey, model: activeModel().model } : undefined,
+          ...(isAllModelsMode() && state.models.length ? { providers: allModelProviders() }
+            : chatModel ? { provider: { type: chatModel.type || 'openai', endpoint: chatModel.endpoint, apiKey: chatModel.apiKey, model: chatModel.model } } : {}),
         }),
       });
       if (res.ok) { const d = await res.json(); reply = d.reply || null; }
@@ -4394,6 +4492,8 @@ loop();
   $('#btn-cancel-model').addEventListener('click', hideModelForm);
   el.mfType.addEventListener('change', () => configureModelForm(el.mfType.value));
   document.querySelectorAll('.stab').forEach((b) => b.addEventListener('click', () => setSettingsTab(b.dataset.stab)));
+  // Quick model switcher in the chat panel — mirrors Settings → Models
+  el.quickModelSelect.addEventListener('change', () => selectModel(el.quickModelSelect.value || null));
   // Secrets
   $('#btn-add-secret').addEventListener('click', () => {
     if (addSecret(el.sfName.value, el.sfValue.value)) { el.sfName.value = ''; el.sfValue.value = ''; }
@@ -4468,6 +4568,7 @@ loop();
   setBuildMode('website');
   initCredits();
   renderAccountButton();
+  renderQuickModelSelect();
   refreshMe();
   initFirebaseConfig().then(() => checkGoogleRedirectResult());
   updateDeployButton();
