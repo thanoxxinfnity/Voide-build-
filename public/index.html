@@ -3058,8 +3058,17 @@
     } catch { /* offline — keep the cached identity */ }
   }
 
-  /* ---------- Google / Firebase sign-in ---------- */
-  const fb = { cfg: null, auth: null, provider: null, signInWithPopup: null };
+  /* ---------- Google / Firebase sign-in ----------
+   * Uses signInWithRedirect, not signInWithPopup. Firebase's popup flow
+   * depends on postMessage between the popup and this window, which modern
+   * Chrome's default Cross-Origin-Opener-Policy frequently breaks silently
+   * — the popup opens, the user picks an account, and the promise on this
+   * side never resolves or rejects (no error, nothing happens). Popups are
+   * also unreliable in mobile/embedded browsers generally. Redirect avoids
+   * all of that: a full-page navigation to Google and back, picked up by
+   * getRedirectResult() on load — the same approach Firebase recommends
+   * for broad compatibility. */
+  const fb = { cfg: null, auth: null, provider: null, signInWithRedirect: null, getRedirectResult: null };
 
   // Ask the server whether Firebase is configured; if so, reveal the button.
   async function initFirebaseConfig() {
@@ -3083,7 +3092,28 @@
     const app = appMod.initializeApp(fb.cfg);
     fb.auth = authMod.getAuth(app);
     fb.provider = new authMod.GoogleAuthProvider();
-    fb.signInWithPopup = authMod.signInWithPopup;
+    fb.signInWithRedirect = authMod.signInWithRedirect;
+    fb.getRedirectResult = authMod.getRedirectResult;
+  }
+
+  // Shared by both flows: exchange a Firebase credential for our own token.
+  async function completeGoogleSignIn(cred) {
+    const idToken = await cred.user.getIdToken();
+    const res = await fetch('/api/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Google sign-in failed');
+    state.auth = { token: data.token, user: data.user };
+    saveAuth();
+    renderAccountButton();
+    closeAuth();
+    toast(`Welcome, ${data.user.email} 👋`, 'success');
+    fetchTeams();
+    fetchInbox();
+    runPendingAfterAuth();
   }
 
   async function googleSignIn() {
@@ -3092,28 +3122,23 @@
     btn.disabled = true;
     try {
       await ensureFirebase();
-      const cred = await fb.signInWithPopup(fb.auth, fb.provider);
-      const idToken = await cred.user.getIdToken();
-      const res = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Google sign-in failed');
-      state.auth = { token: data.token, user: data.user };
-      saveAuth();
-      renderAccountButton();
-      closeAuth();
-      toast(`Welcome, ${data.user.email} 👋`, 'success');
-      fetchTeams();
-      fetchInbox();
-      runPendingAfterAuth();
+      await fb.signInWithRedirect(fb.auth, fb.provider); // navigates away — nothing after this runs
     } catch (err) {
-      const msg = err && err.code === 'auth/popup-closed-by-user' ? 'Sign-in cancelled' : (err.message || 'Google sign-in failed');
-      authErr(msg);
-    } finally {
+      authErr(err.message || 'Google sign-in failed');
       btn.disabled = false;
+    }
+  }
+
+  // On every page load, check whether we just came back from a Google
+  // redirect and finish signing in if so.
+  async function checkGoogleRedirectResult() {
+    if (!fb.cfg) return;
+    try {
+      await ensureFirebase();
+      const cred = await fb.getRedirectResult(fb.auth);
+      if (cred) await completeGoogleSignIn(cred);
+    } catch (err) {
+      authErr(err.message || 'Google sign-in failed');
     }
   }
 
@@ -4444,7 +4469,7 @@ loop();
   initCredits();
   renderAccountButton();
   refreshMe();
-  initFirebaseConfig();
+  initFirebaseConfig().then(() => checkGoogleRedirectResult());
   updateDeployButton();
   setTab('preview');
   el.overlay.classList.add('view-hidden');
