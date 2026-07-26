@@ -569,7 +569,7 @@ const SYSTEM_PROMPT = [
   'DESIGN QUALITY BAR (non-negotiable):',
   '- Write REAL, specific, on-brief copy everywhere — headlines, body text, testimonials, prices, names. NEVER "Lorem ipsum", "Company Name", "Your text here", or other placeholders.',
   '- Pick ONE deliberate visual direction (e.g. "dark glassmorphism with violet-cyan gradients" or "warm editorial with serif headlines") and apply it with total consistency — same corner-radius scale, same spacing scale (e.g. 4/8/16/24/40/64px), same 2-3 font pairing, same color system with one accent used sparingly for emphasis.',
-  '- Typography does real work: a clear size/weight hierarchy (large confident headlines, comfortable body line-height ~1.6-1.7), generous whitespace — never cramped, never centered-everything.',
+  '- Typography does real work: a clear size/weight hierarchy (large confident headlines, comfortable body line-height ~1.6-1.7), generous whitespace — never cramped, never centered-everything. CRITICAL: set your chosen font-family on `*` or on `html, body` with `font-family` inherited (NOT only on `body` or only on `p`) — h1/h2/h3/headings must NEVER be left to fall back to the browser default serif font. If using a display font for headings, set it explicitly on those heading selectors too, and always list a generic fallback (e.g. `font-family: "Inter", sans-serif`).',
   '- Every interactive element gets a real hover/focus/active state (transform, shadow, or color shift) — nothing should look static or default-browser.',
   '- Layout depth: layered backgrounds (gradients, subtle grid/noise/blur), asymmetric or grid-based sections instead of everything centered in a single column, real card/section boundaries via shadow or border, not just background-color changes.',
   '- Mobile is a first-class layout, not a squashed desktop — rethink multi-column sections as stacked/scrollable on small screens.',
@@ -771,7 +771,40 @@ async function callWithFallback(chain, system, user, opts) {
   throw lastErr || new Error('no models configured');
 }
 
-// Generate one image via HF (tries each image model), → data URL or null.
+// A single attempt at one HF image model. Returns a data URL, or throws with
+// { retryAfterMs } set when the model is cold-loading (HF's documented
+// behavior — it returns 503 + estimated_time while it spins up).
+async function hfImageAttempt(model, prompt) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000);
+  try {
+    const r = await fetch(`https://router.huggingface.co/hf-inference/models/${model}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${HF_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inputs: prompt.slice(0, 400) }),
+      signal: controller.signal,
+    });
+    const mime = r.headers.get('content-type') || '';
+    if (!r.ok || mime.includes('application/json')) {
+      // Cold start → HF returns JSON like { error, estimated_time }, not an image.
+      const body = await r.text().catch(() => '');
+      let estimated = 0;
+      try { estimated = JSON.parse(body).estimated_time || 0; } catch { /* not JSON */ }
+      const err = new Error(`image model ${model} → ${r.status}: ${body.slice(0, 150)}`);
+      if (r.status === 503 || /loading/i.test(body)) err.retryAfterMs = Math.min(Math.ceil((estimated || 6) * 1000), 12000);
+      throw err;
+    }
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length < 1000) throw new Error(`image model ${model} returned an unexpectedly small file`);
+    return `data:${mime || 'image/jpeg'};base64,${buf.toString('base64')}`;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// Generate one image via HF (tries each image model, retrying once on a
+// cold-start "loading" response since that's extremely common on the free
+// tier), → data URL or null if every model/attempt failed.
 // kind: 'photo' (default) or 'logo' (adds vector/icon/transparent styling to the prompt).
 async function hfGenerateImage(prompt, kind = 'photo') {
   if (!HF_TOKEN) return null;
@@ -779,19 +812,18 @@ async function hfGenerateImage(prompt, kind = 'photo') {
     ? `minimalist vector logo icon, ${prompt}, flat design, clean lines, centered, simple bold shapes, white background, professional brand mark`
     : String(prompt);
   for (const model of HF_IMAGE_MODELS) {
-    try {
-      const r = await fetch(`https://router.huggingface.co/hf-inference/models/${model}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${HF_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputs: finalPrompt.slice(0, 400) }),
-      });
-      if (!r.ok) { console.warn(`image model ${model} → ${r.status}`); continue; }
-      const buf = Buffer.from(await r.arrayBuffer());
-      if (buf.length < 1000) continue; // an error blob, not an image
-      const mime = r.headers.get('content-type') || 'image/jpeg';
-      return `data:${mime};base64,${buf.toString('base64')}`;
-    } catch (err) {
-      console.warn(`image model ${model} failed: ${err.message.slice(0, 100)}`);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await hfImageAttempt(model, finalPrompt);
+      } catch (err) {
+        if (err.retryAfterMs && attempt === 0) {
+          console.warn(`${err.message} — model is cold-starting, retrying in ${err.retryAfterMs}ms`);
+          await new Promise((r) => setTimeout(r, err.retryAfterMs));
+          continue;
+        }
+        console.warn(err.message || String(err));
+        break; // give up on this model, try the next one in the list
+      }
     }
   }
   return null;
@@ -809,25 +841,45 @@ function placeholderImage(text, kind = 'photo') {
   return 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
 }
 
+// Run a promise but never wait longer than budgetMs for it (resolves to
+// null past the deadline instead of blocking the whole response — a slow
+// image just falls back to a placeholder rather than stalling the build).
+function withBudget(promise, budgetMs) {
+  return Promise.race([
+    promise.catch(() => null),
+    new Promise((resolve) => setTimeout(() => resolve(null), budgetMs)),
+  ]);
+}
+
 // Replace <img src="ai-img: description"> / <img src="ai-logo: description">
 // placeholders the model emitted with real HF-generated images (max 3 photos
 // + 1 logo per site; graceful SVG fallback if generation is unavailable).
+// All images generate IN PARALLEL with a shared time budget, so adding
+// images never multiplies the wait time per picture.
 async function inlineAiImages(html) {
   let out = html;
+  const IMAGE_BUDGET_MS = 25000;
 
   const logoMatches = [...out.matchAll(/src=["']ai-logo:\s*([^"']{2,200})["']/gi)];
-  if (logoMatches.length) {
-    const desc = logoMatches[0][1].trim();
-    const img = (await hfGenerateImage(desc, 'logo')) || placeholderImage(desc, 'logo');
-    out = out.split(`ai-logo: ${desc}`).join(img).split(`ai-logo:${desc}`).join(img);
+  const photoMatches = [...out.matchAll(/src=["']ai-img:\s*([^"']{3,200})["']/gi)];
+  const logoDesc = logoMatches.length ? logoMatches[0][1].trim() : null;
+  const photoDescs = [...new Set(photoMatches.map((m) => m[1].trim()))].slice(0, 3);
+
+  const [logoImg, ...photoImgs] = await Promise.all([
+    logoDesc ? withBudget(hfGenerateImage(logoDesc, 'logo'), IMAGE_BUDGET_MS) : Promise.resolve(null),
+    ...photoDescs.map((d) => withBudget(hfGenerateImage(d, 'photo'), IMAGE_BUDGET_MS)),
+  ]);
+
+  if (logoDesc) {
+    const img = logoImg || placeholderImage(logoDesc, 'logo');
+    out = out.split(`ai-logo: ${logoDesc}`).join(img).split(`ai-logo:${logoDesc}`).join(img);
     out = out.replace(/src=["']ai-logo:\s*([^"']{2,200})["']/gi, (_, d) => `src="${placeholderImage(d, 'logo')}"`);
   }
 
-  const matches = [...out.matchAll(/src=["']ai-img:\s*([^"']{3,200})["']/gi)];
-  if (matches.length) {
-    const unique = [...new Set(matches.map((m) => m[1].trim()))].slice(0, 3);
-    for (const desc of unique) {
-      const img = (await hfGenerateImage(desc, 'photo')) || placeholderImage(desc, 'photo');
+  if (photoDescs.length) {
+    for (let i = 0; i < photoDescs.length; i++) {
+      const desc = photoDescs[i];
+      const img = photoImgs[i] || placeholderImage(desc, 'photo');
       out = out.split(`ai-img: ${desc}`).join(img).split(`ai-img:${desc}`).join(img);
     }
     // Any leftovers (beyond the 3-image budget) get placeholders too.
