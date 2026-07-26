@@ -2116,7 +2116,10 @@
   // Insert or update the current project in history (newest first), saved
   // to the signed-in account (and shared with state.activeTeamId, if set).
   async function saveProject() {
-    if (!state.projectId || !state.code || !state.auth?.user) return;
+    // A project is worth saving once there's either real code OR a chat —
+    // plain conversations show up in the dashboard too, not just builds.
+    if (!state.projectId || !state.auth?.user) return;
+    if (!state.code && !state.chatLog.length) return;
     const body = {
       id: state.projectId,
       name: state.projectName || 'Untitled project',
@@ -2149,7 +2152,7 @@
     toast('Project deleted');
   }
 
-  // Reopen a saved project in the workspace.
+  // Reopen a saved project (or chat-only conversation) in the workspace.
   function loadProject(id) {
     const p = state.projects.find((x) => x.id === id);
     if (!p) return;
@@ -2163,14 +2166,23 @@
     const restored = restoreChatLog(p.id, p.chat); // bring back the saved conversation (local or server copy)
     closeProjects();
     showWorkspace();
-    setTab('preview');
-    renderOutput(p.code, p.files);
     connectCollab(p.id);
-    setBuildStatus('Ready', 'ok');
+    const hasCode = !!(p.code && p.code.trim());
+    if (hasCode) {
+      setTab('preview');
+      renderOutput(p.code, p.files);
+      setBuildStatus('Ready', 'ok');
+    } else {
+      // Chat-only project — nothing built yet, so keep the chat panel front and center.
+      setTab('code');
+      el.btnDownload.disabled = true;
+      el.btnDeploy.disabled = true;
+      setBuildStatus('Idle', 'idle');
+    }
     addAssistantMessage(restored
       ? `Reopened “${p.name}” — your chat history is right here. What next?`
       : `Reopened “${p.name}”. Tell me what you'd like to change.`);
-    if (window.innerWidth < 768) setMobilePanel('output');
+    if (window.innerWidth < 768) setMobilePanel(hasCode ? 'output' : 'chat');
   }
 
   function relTime(ts) {
@@ -2191,15 +2203,20 @@
       const row = document.createElement('div');
       row.className = 'glass flex items-center gap-3 rounded-xl px-3.5 py-3';
       const team = p.teamId ? state.teams.find((t) => t.id === p.teamId) : null;
+      const hasCode = !!(p.code && p.code.trim());
       row.innerHTML = `
         <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-brand-500/15 text-brand-300">
-          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/></svg>
+          ${hasCode
+            ? '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/></svg>'
+            : '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'}
         </span>
         <button class="proj-open min-w-0 flex-1 text-left">
           <div class="truncate text-sm font-semibold text-white"></div>
           <div class="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
             <span>${relTime(p.updatedAt)}</span>
-            ${p.deployedUrl ? '<span class="text-emerald-400">● Live</span>' : '<span class="text-slate-600">Not deployed</span>'}
+            ${hasCode
+              ? (p.deployedUrl ? '<span class="text-emerald-400">● Live</span>' : '<span class="text-slate-600">Not deployed</span>')
+              : '<span class="text-accent-300">💬 Chat only</span>'}
             ${p.mode === 'canvas' ? '<span class="text-violet-300">🎮 Game</span>' : ''}
             ${team ? `<span class="rounded-full bg-brand-500/15 px-2 py-0.5 text-brand-300">👥 ${team.name}</span>` : ''}
           </div>
@@ -3846,6 +3863,10 @@ loop();
     el.btnGenerate.disabled = true;
     el.btnRefine.disabled = true;
 
+    // A pure-chat project still needs a name for the Projects dashboard.
+    if (!state.projectName) state.projectName = text.slice(0, 42) + (text.length > 42 ? '…' : '');
+    el.projectLabel.textContent = projectLabelText(state.projectId);
+
     const think = addThinking('Reading your message…');
     await pace(700);
     setThinking(think, 'Thinking about the best answer…');
@@ -3866,6 +3887,7 @@ loop();
 
     think.remove();
     addAssistantMessage(reply || localChatReply(text));
+    saveProject(); // conversation shows up in the Projects dashboard too, not just builds
     state.busy = false;
     el.btnGenerate.disabled = false;
     el.btnRefine.disabled = false;
