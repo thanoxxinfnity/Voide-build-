@@ -1,0 +1,13 @@
+{
+  "name": "voide-cloud-build-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone agent for Cloud Shell — compiles Android APKs on request from Voide's admin-only build route. Not deployed on Render; runs on your own machine.",
+  "main": "build-agent.js",
+  "scripts": {
+    "start": "node build-agent.js"
+  },
+  "dependencies": {
+    "express": "^4.22.2"
+  }
+}

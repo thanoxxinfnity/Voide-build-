@@ -212,6 +212,14 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// A user IS the admin purely by email match against ADMIN_EMAIL — no role
+// field in the store, no separate admin login. Fails closed: unset
+// ADMIN_EMAIL means isAdmin is false for literally everyone.
+function isAdminEmail(email) {
+  const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+  return !!adminEmail && String(email || '').trim().toLowerCase() === adminEmail;
+}
+
 app.post('/api/auth/signup', (req, res) => {
   const email = String((req.body || {}).email || '').trim().toLowerCase();
   const password = String((req.body || {}).password || '');
@@ -225,7 +233,7 @@ app.post('/api/auth/signup', (req, res) => {
   store.users[email] = user;
   saveStore();
   const token = signToken({ uid: user.id, email, exp: Date.now() + TOKEN_TTL });
-  res.json({ token, user: { id: user.id, email, mailbox: user.inboxAddress } });
+  res.json({ token, user: { id: user.id, email, mailbox: user.inboxAddress, isAdmin: isAdminEmail(email) } });
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -237,14 +245,14 @@ app.post('/api/auth/login', (req, res) => {
   }
   ensureInbox(user);
   const token = signToken({ uid: user.id, email, exp: Date.now() + TOKEN_TTL });
-  res.json({ token, user: { id: user.id, email, mailbox: user.inboxAddress } });
+  res.json({ token, user: { id: user.id, email, mailbox: user.inboxAddress, isAdmin: isAdminEmail(email) } });
 });
 
 app.get('/api/auth/me', (req, res) => {
   const p = verifyToken(bearer(req));
   if (!p) return res.status(401).json({ error: 'not authenticated' });
   const user = store.users[p.email];
-  res.json({ user: { id: p.uid, email: p.email, mailbox: ensureInbox(user) } });
+  res.json({ user: { id: p.uid, email: p.email, mailbox: ensureInbox(user), isAdmin: isAdminEmail(p.email) } });
 });
 
 /* ------------------------------------------------------------------ */
@@ -337,7 +345,7 @@ app.post('/api/auth/google', async (req, res) => {
   ensureInbox(user);
   saveStore();
   const token = signToken({ uid: user.id, email, exp: Date.now() + TOKEN_TTL });
-  res.json({ token, user: { id: user.id, email, mailbox: user.inboxAddress } });
+  res.json({ token, user: { id: user.id, email, mailbox: user.inboxAddress, isAdmin: isAdminEmail(email) } });
 });
 
 /* ------------------------------------------------------------------ */
@@ -1246,6 +1254,56 @@ app.get('/api/admin/terminal-url', requireAuth, requireAdmin, (req, res) => {
   const url = process.env.TERMINAL_URL || '';
   if (!url) return res.status(501).json({ error: 'TERMINAL_URL not configured' });
   res.json({ url });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Admin-only Android APK builder.                                    */
+/*                                                                     */
+/*  Only an explicit click by the verified admin (requireAdmin) ever   */
+/*  reaches this route — no chat message, no AI decision, and no other */
+/*  signed-in user can trigger it. This route is the ONLY thing that   */
+/*  talks to the Cloud Shell build agent; the agent itself has no      */
+/*  public unauthenticated endpoints (every request needs             */
+/*  CLOUD_BUILD_SECRET) and never exposes a raw terminal or a lingering*/
+/*  public download link — the APK bytes flow straight back through    */
+/*  this request/response and are handed to the admin's browser.       */
+/* ------------------------------------------------------------------ */
+app.post('/api/admin/build-apk', requireAuth, requireAdmin, async (req, res) => {
+  const agentUrl = process.env.CLOUD_BUILD_AGENT_URL || '';
+  const secret = process.env.CLOUD_BUILD_SECRET || '';
+  if (!agentUrl || !secret) {
+    return res.status(501).json({ error: 'CLOUD_BUILD_AGENT_URL / CLOUD_BUILD_SECRET not configured' });
+  }
+  const { files } = req.body || {};
+  if (!files || typeof files !== 'object' || !Object.keys(files).length) {
+    return res.status(400).json({ error: 'files (path -> content map) is required' });
+  }
+  if (Object.values(files).reduce((n, c) => n + String(c || '').length, 0) > 8_000_000) {
+    return res.status(413).json({ error: 'Project too large (8MB text limit)' });
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8 * 60 * 1000); // Gradle's first build can be slow
+  try {
+    const r = await fetch(`${agentUrl.replace(/\/+$/, '')}/build-apk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Secret-Key': secret },
+      body: JSON.stringify({ files }),
+      signal: controller.signal,
+    });
+    const contentType = r.headers.get('content-type') || '';
+    if (!r.ok) {
+      const detail = contentType.includes('application/json') ? (await r.json().catch(() => ({}))).error : (await r.text().catch(() => '')).slice(0, 800);
+      return res.status(502).json({ error: `Build agent error (${r.status}): ${detail || 'unknown'}` });
+    }
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.json({ apk: `data:application/vnd.android.package-archive;base64,${buf.toString('base64')}` });
+  } catch (err) {
+    const msg = err.name === 'AbortError' ? 'Build timed out after 8 minutes' : `Could not reach the build agent: ${err.message}`;
+    res.status(502).json({ error: msg });
+  } finally {
+    clearTimeout(timeout);
+  }
 });
 
 /* ------------------------------------------------------------------ */

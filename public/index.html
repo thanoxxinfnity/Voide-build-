@@ -272,6 +272,12 @@
         <span class="sm:hidden">Export</span>
       </button>
 
+      <!-- Build APK (admin-only — hidden entirely unless the signed-in user is the configured admin) -->
+      <button id="btn-build-apk" class="btn glass view-hidden flex shrink-0 items-center gap-2 rounded-xl p-2 text-sm font-medium text-emerald-300 hover:border-emerald-400/40 hover:bg-emerald-500/10 sm:px-3" title="Build Android APK (admin only)">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg>
+        <span class="hidden md:inline">Build APK</span>
+      </button>
+
       <!-- Deploy / Update Live -->
       <button id="btn-deploy" class="btn btn-primary flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-white" disabled>
         <svg id="deploy-icon-rocket" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
@@ -1129,6 +1135,7 @@
     adminTerminalModal:  $('#admin-terminal-modal'),
     adminTerminalIframe: $('#admin-terminal-iframe'),
     btnCloseAdminTerminal: $('#btn-close-admin-terminal'),
+    btnBuildApk: $('#btn-build-apk'),
     modelForm:        $('#model-form'),
     mfType:           $('#mf-type'),
     mfLabel:          $('#mf-label'),
@@ -1951,6 +1958,40 @@
     el.stSuccess.classList.toggle('view-hidden', which !== 'success');
     el.stError.classList.toggle('view-hidden', which !== 'error');
     el.stToken.classList.toggle('view-hidden', which !== 'token');
+  }
+
+  // ---------- Admin-only: build an Android APK from the current project files ----------
+  // The security gate is server-side (requireAdmin on /api/admin/build-apk);
+  // this client-side isAdmin check is only so a non-admin who somehow clicks
+  // a stray button gets an immediate local no-op instead of a network round trip.
+  async function buildApk() {
+    if (!state.auth?.user?.isAdmin) return;
+    if (!Object.keys(state.files).length) { toast('Add your Android project files first (file tree, + button)', 'error'); return; }
+    el.btnBuildApk.disabled = true;
+    const original = el.btnBuildApk.innerHTML;
+    el.btnBuildApk.innerHTML = `<div class="h-4 w-4 shrink-0 animate-spin-slow rounded-full border-2 border-white/20 border-t-emerald-400"></div><span class="hidden md:inline">Building…</span>`;
+    toast('Build started — Gradle can take a few minutes…', 'info');
+    try {
+      const res = await fetch('/api/admin/build-apk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ files: state.files }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.apk) throw new Error(data.error || 'Build failed');
+      const a = document.createElement('a');
+      a.href = data.apk;
+      a.download = (state.projectName || 'app').replace(/[^\w.-]+/g, '-') + '.apk';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast('APK built — download started ✅', 'success');
+    } catch (err) {
+      toast((err.message || 'Build failed').slice(0, 220), 'error');
+    } finally {
+      el.btnBuildApk.disabled = false;
+      el.btnBuildApk.innerHTML = original;
+    }
   }
 
   async function startDeploy() {
@@ -3041,6 +3082,10 @@
     // Reflect in the profile header too.
     el.profileAvatar.textContent = u ? initials(u.email) : 'V';
     el.profileSub.textContent = u ? u.email : 'Everything is saved on this device.';
+    // "Build APK" only exists in the DOM's visible state for the verified
+    // admin — this is UX convenience, not the security boundary; the real
+    // gate is requireAdmin on the server for every request this button makes.
+    el.btnBuildApk.classList.toggle('view-hidden', !u?.isAdmin);
   }
 
   // Account card inside the profile modal.
@@ -4496,6 +4541,7 @@ loop();
   el.btnCopy.addEventListener('click', copyCode);
   el.btnDownload.addEventListener('click', downloadCode);
   el.btnDeploy.addEventListener('click', () => gate(startDeploy));
+  el.btnBuildApk.addEventListener('click', () => gate(buildApk));
   el.btnProjects.addEventListener('click', () => gate(openProjects));
   el.btnMailbox.addEventListener('click', () => gate(openMailbox));
   el.mailboxBackdrop.addEventListener('click', closeMailbox);
