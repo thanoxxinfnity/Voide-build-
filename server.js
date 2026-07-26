@@ -507,6 +507,15 @@ app.post('/api/projects', requireAuth, (req, res) => {
   }
   const code = typeof body.code === 'string' ? body.code : (existing?.code || '');
   const files = body.files && typeof body.files === 'object' ? body.files : (existing?.files || { 'index.html': code });
+  // Replit-style: the conversation is part of the project's history too —
+  // saved server-side so it follows the user to any device.
+  const chat = Array.isArray(body.chat)
+    ? body.chat.slice(-120).map((m) => ({
+        role: m.role === 'user' ? 'user' : 'ai',
+        text: String(m.text || '').slice(0, 2000),
+        ts: Number(m.ts) || Date.now(),
+      }))
+    : (existing?.chat || []);
   const project = {
     id,
     ownerEmail: existing ? existing.ownerEmail : req.auth.email,
@@ -515,6 +524,7 @@ app.post('/api/projects', requireAuth, (req, res) => {
     mode: body.mode || existing?.mode || 'website',
     code,
     files,
+    chat,
     deployedUrl: body.deployedUrl !== undefined ? body.deployedUrl : (existing?.deployedUrl || null),
     createdAt: existing?.createdAt || Date.now(),
     updatedAt: Date.now(),
@@ -601,8 +611,27 @@ function providerError(status, detail) {
   return err;
 }
 
+// Fill in sensible official endpoints when the user leaves the field blank,
+// and repair half-pasted URLs (e.g. "https://api.anthropic.com" without the
+// /v1/messages path) so adding a model "just works".
+const DEFAULT_ENDPOINTS = {
+  openai:     'https://api.openai.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  anthropic:  'https://api.anthropic.com/v1/messages',
+  gemini:     'https://generativelanguage.googleapis.com/v1beta',
+};
+function normalizeProviderCfg(cfg) {
+  const type = cfg.type || 'openai';
+  let ep = String(cfg.endpoint || '').trim().replace(/\/+$/, '');
+  if (!ep) ep = DEFAULT_ENDPOINTS[type] || DEFAULT_ENDPOINTS.openai;
+  if (type === 'anthropic' && !/\/messages$/.test(ep)) {
+    ep = ep.replace(/\/v1$/, '') + '/v1/messages';
+  }
+  return { ...cfg, type, endpoint: ep, model: String(cfg.model || '').trim() };
+}
+
 // --- OpenAI-compatible (OpenAI, Groq, OpenRouter, Together, Mistral, local) ---
-async function callOpenAI({ endpoint, apiKey, model }, system, user) {
+async function callOpenAI({ endpoint, apiKey, model }, system, user, opts = {}) {
   let base = String(endpoint || '').trim().replace(/\/+$/, '');
   const url = /\/chat\/completions$/.test(base) ? base : base + '/chat/completions';
   const r = await fetch(url, {
@@ -611,7 +640,7 @@ async function callOpenAI({ endpoint, apiKey, model }, system, user) {
     body: JSON.stringify({
       model,
       temperature: 0.7,
-      max_tokens: 8000,
+      max_tokens: opts.maxTokens || 8000,
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
     }),
   });
@@ -621,7 +650,7 @@ async function callOpenAI({ endpoint, apiKey, model }, system, user) {
 }
 
 // --- Anthropic (Claude) ---
-async function callAnthropic({ endpoint, apiKey, model }, system, user) {
+async function callAnthropic({ endpoint, apiKey, model }, system, user, opts = {}) {
   const url = (String(endpoint || '').trim().replace(/\/+$/, '')) || 'https://api.anthropic.com/v1/messages';
   const r = await fetch(url, {
     method: 'POST',
@@ -632,7 +661,7 @@ async function callAnthropic({ endpoint, apiKey, model }, system, user) {
     },
     body: JSON.stringify({
       model,
-      max_tokens: 8000,
+      max_tokens: opts.maxTokens || 8000,
       system,
       messages: [{ role: 'user', content: user }],
     }),
@@ -643,7 +672,7 @@ async function callAnthropic({ endpoint, apiKey, model }, system, user) {
 }
 
 // --- Google Gemini ---
-async function callGemini({ endpoint, apiKey, model }, system, user) {
+async function callGemini({ endpoint, apiKey, model }, system, user, opts = {}) {
   const base = (String(endpoint || '').trim().replace(/\/+$/, '')) || 'https://generativelanguage.googleapis.com/v1beta';
   const url = `${base}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey || '')}`;
   const r = await fetch(url, {
@@ -652,7 +681,7 @@ async function callGemini({ endpoint, apiKey, model }, system, user) {
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: 'user', parts: [{ text: user }] }],
-      generationConfig: { temperature: 0.7, maxOutputTokens: 8000 },
+      generationConfig: { temperature: 0.7, maxOutputTokens: opts.maxTokens || 8000 },
     }),
   });
   if (!r.ok) throw providerError(r.status, await r.text().catch(() => ''));
@@ -661,11 +690,12 @@ async function callGemini({ endpoint, apiKey, model }, system, user) {
 }
 
 // Dispatch to the right API based on provider type.
-function callProvider(cfg, system, user) {
-  switch (cfg.type) {
-    case 'anthropic': return callAnthropic(cfg, system, user);
-    case 'gemini':    return callGemini(cfg, system, user);
-    default:          return callOpenAI(cfg, system, user); // openai / openrouter / custom / groq
+function callProvider(cfg, system, user, opts) {
+  const c = normalizeProviderCfg(cfg);
+  switch (c.type) {
+    case 'anthropic': return callAnthropic(c, system, user, opts);
+    case 'gemini':    return callGemini(c, system, user, opts);
+    default:          return callOpenAI(c, system, user, opts); // openai / openrouter / custom / groq
   }
 }
 
@@ -687,9 +717,10 @@ app.post('/api/generate-code', requireAuth, async (req, res) => {
   const systemPrompt = mode === 'canvas' ? CANVAS_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
   // Pick the provider: a user-supplied model wins, else server Groq.
+  // (Missing endpoints are filled with the provider's official URL.)
   let cfg;
   let modelName = 'default';
-  if (provider && provider.model && (provider.endpoint || provider.type === 'anthropic' || provider.type === 'gemini')) {
+  if (provider && provider.model) {
     cfg = {
       type: provider.type || 'openai',
       endpoint: provider.endpoint || '',
@@ -750,7 +781,7 @@ app.post('/api/chat', requireAuth, async (req, res) => {
   if (!message || !String(message).trim()) return res.status(400).json({ error: 'message is required' });
 
   let cfg;
-  if (provider && provider.model && (provider.endpoint || provider.type === 'anthropic' || provider.type === 'gemini')) {
+  if (provider && provider.model) {
     cfg = { type: provider.type || 'openai', endpoint: provider.endpoint || '', apiKey: provider.apiKey || '', model: provider.model };
   } else if (process.env.GROQ_API_KEY) {
     cfg = { type: 'openai', endpoint: 'https://api.groq.com/openai/v1', apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL };
@@ -764,13 +795,32 @@ app.post('/api/chat', requireAuth, async (req, res) => {
   const userMsg = (convo ? `Conversation so far:\n${convo}\n\n` : '') + `User's new message: ${String(message).slice(0, 2000)}`;
 
   try {
-    const raw = await callProvider(cfg, CHAT_SYSTEM_PROMPT, userMsg);
+    // Chat replies are short — cap tokens so BYOK credits are never wasted.
+    const raw = await callProvider(cfg, CHAT_SYSTEM_PROMPT, userMsg, { maxTokens: 512 });
     const reply = String(raw || '').trim().slice(0, 4000);
     if (!reply) return res.status(502).json({ error: 'empty reply' });
     res.json({ reply });
   } catch (err) {
     console.error('chat error:', err.message);
     res.status(502).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/test-model   (requires Authorization: Bearer <token>)
+ * Body: { provider: { type, endpoint?, apiKey, model } }
+ * Makes a ~10-token ping to the user's model so they can verify a newly
+ * added key/model id actually works — without wasting their credits.
+ */
+app.post('/api/test-model', requireAuth, async (req, res) => {
+  const { provider } = req.body || {};
+  if (!provider || !provider.model) return res.status(400).json({ ok: false, error: 'provider.model is required' });
+  const cfg = { type: provider.type || 'openai', endpoint: provider.endpoint || '', apiKey: provider.apiKey || '', model: provider.model };
+  try {
+    const raw = await callProvider(cfg, 'You are a connectivity check.', 'Reply with exactly: OK', { maxTokens: 16 });
+    res.json({ ok: true, reply: String(raw || '').trim().slice(0, 50) });
+  } catch (err) {
+    res.status(200).json({ ok: false, error: (err.detail ? `${err.message} — ${err.detail}` : err.message).slice(0, 400) });
   }
 });
 

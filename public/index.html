@@ -1355,10 +1355,13 @@
       try { localStorage.setItem('aws_chat_' + state.projectId, JSON.stringify(state.chatLog)); } catch { /* storage full — skip */ }
     }
   }
-  function restoreChatLog(projectId) {
+  function restoreChatLog(projectId, serverChat) {
     let log = [];
     try { log = JSON.parse(localStorage.getItem('aws_chat_' + projectId) || '[]'); } catch { log = []; }
-    state.chatLog = Array.isArray(log) ? log : [];
+    if (!Array.isArray(log)) log = [];
+    // Server copy wins when it has more history (e.g. opening from a new device).
+    if (Array.isArray(serverChat) && serverChat.length > log.length) log = serverChat;
+    state.chatLog = log;
     el.chatStream.innerHTML = '';
     for (const m of state.chatLog) {
       if (m.role === 'user') addUserMessage(m.text, { silent: true });
@@ -2043,6 +2046,7 @@
     state.deployedUrl = null;
     state.attachments = [];
     state.chatLog = [];
+    pendingBrief = null;
     renderAttachments();
     renderFileTree();
     el.chatStream.innerHTML = '';
@@ -2119,6 +2123,7 @@
       mode: state.projectMode,
       code: state.code,
       files: state.files,
+      chat: state.chatLog.slice(-120), // conversation history travels with the project
       deployedUrl: state.deployedUrl || null,
       teamId: state.activeTeamId || null,
     };
@@ -2154,7 +2159,8 @@
     state.activeTeamId = p.teamId || null;
     state.deployedUrl = p.deployedUrl || null;
     el.projectLabel.textContent = projectLabelText(p.id);
-    const restored = restoreChatLog(p.id); // bring back the saved conversation
+    pendingBrief = null;
+    const restored = restoreChatLog(p.id, p.chat); // bring back the saved conversation (local or server copy)
     closeProjects();
     showWorkspace();
     setTab('preview');
@@ -2622,10 +2628,10 @@
 
   // Per-provider presets: placeholders + whether the endpoint is optional.
   const PROVIDER_META = {
-    openai:     { model: 'gpt-4o-mini',                endpoint: 'https://api.openai.com/v1',                    optional: false },
-    anthropic:  { model: 'claude-sonnet-4-20250514',   endpoint: 'https://api.anthropic.com/v1/messages',        optional: true  },
+    openai:     { model: 'gpt-4o-mini',                endpoint: 'https://api.openai.com/v1',                    optional: true  },
+    anthropic:  { model: 'claude-sonnet-4-5',          endpoint: 'https://api.anthropic.com/v1/messages',        optional: true  },
     gemini:     { model: 'gemini-2.0-flash',           endpoint: 'https://generativelanguage.googleapis.com/v1beta', optional: true  },
-    openrouter: { model: 'openai/gpt-4o-mini',         endpoint: 'https://openrouter.ai/api/v1',                 optional: false },
+    openrouter: { model: 'openai/gpt-4o-mini',         endpoint: 'https://openrouter.ai/api/v1',                 optional: true  },
     custom:     { model: 'model-id',                   endpoint: 'https://your-host/v1',                         optional: false },
   };
 
@@ -2685,6 +2691,26 @@
 
   const PROVIDER_NAMES = { openai: 'OpenAI', anthropic: 'Claude', gemini: 'Gemini', openrouter: 'OpenRouter', custom: 'Custom' };
 
+  // Ping the model with a ~10-token request so the user can confirm their
+  // key + model id work BEFORE spending real credits on a build.
+  async function testModel(m, btn) {
+    if (btn) { btn.textContent = '…'; btn.disabled = true; }
+    try {
+      const res = await fetch('/api/test-model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ provider: { type: m.type || 'openai', endpoint: m.endpoint, apiKey: m.apiKey, model: m.model } }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (d.ok) toast(`“${m.label}” works! ✅`, 'success');
+      else toast(`“${m.label}” failed: ${d.error || 'unknown error'}`.slice(0, 160), 'error');
+    } catch {
+      toast('Could not reach the server to test', 'error');
+    } finally {
+      if (btn) { btn.textContent = 'Test'; btn.disabled = false; }
+    }
+  }
+
   function modelRow({ id, label, active, sub, custom }) {
     const row = document.createElement('div');
     row.className = `flex items-center gap-3 rounded-xl border px-3.5 py-3 ${active ? 'border-brand-400/50 bg-brand-500/10' : 'border-white/10 bg-black/20'}`;
@@ -2700,6 +2726,7 @@
         <div class="mt-0.5 truncate text-[11px] text-slate-500">${sub}</div>
       </button>
       ${custom ? `
+        <button class="mdl-test btn shrink-0 rounded-lg px-2 py-1.5 text-[11px] font-semibold text-slate-400 hover:bg-emerald-500/15 hover:text-emerald-300" title="Test this model (~10 tokens)">Test</button>
         <button class="mdl-edit btn shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-white/10 hover:text-white" title="Edit">
           <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
         </button>
@@ -2735,6 +2762,7 @@
         custom: true,
       });
       row.querySelector('.mdl-pick').addEventListener('click', () => selectModel(m.id));
+      row.querySelector('.mdl-test').addEventListener('click', () => testModel(m, row.querySelector('.mdl-test')));
       row.querySelector('.mdl-edit').addEventListener('click', () => showModelForm(m));
       row.querySelector('.mdl-del').addEventListener('click', () => deleteModel(m.id));
       el.modelsList.appendChild(row);
@@ -3749,6 +3777,56 @@ loop();
     return /[ऀ-ॿ]/.test(t) || /\b(hai|ha|nahi|kya|karo|kaise|kese|bhai|bro|yaar|yar|acha|accha|chahiye|banao|bata|karo|hoon|ho|mera|tera|aap|tum)\b/i.test(t);
   }
 
+  /* ---------- Replit-style confidence check ----------
+   * Specific + simple brief (portfolio, landing page with details) → build
+   * directly. Vague or complex-system brief (e-commerce, auth, database…)
+   * → ask 2-3 targeted, domain-specific questions FIRST, then build. */
+  function assessBuildBrief(prompt) {
+    const p = prompt.toLowerCase();
+    const hi = isHindiish(prompt);
+    let confidence = 45;
+
+    // Detail signals push confidence up.
+    if (p.length > 140) confidence += 20;
+    else if (p.length > 70) confidence += 10;
+    if (/(dark|light|neon|minimal|modern|glass|gradient|colou?r|theme)/.test(p)) confidence += 12; // style given
+    if (/(hero|pricing|gallery|contact|faq|about|footer|section|grid|testimonial|form)/.test(p)) confidence += 12; // sections given
+    if (/(called|named|naam|"|')/.test(p)) confidence += 6; // brand given
+    // Simple site types are safe to build directly.
+    if (/(portfolio|landing|blog|resume|cv|calculator|timer|todo|countdown|quiz|birthday|wedding|invitation|restaurant|cafe|gym|salon)/.test(p)) confidence += 15;
+
+    // Complex systems need answers before building.
+    const questions = [];
+    const q = (en, hin) => questions.push(hi ? hin : en);
+    if (/(e-?commerce|online ?store|shop|store|dukan|dukaan|selling|sell)/.test(p)) {
+      confidence -= 25;
+      q('What products will you sell, and roughly how many?', 'Kaunse products bechoge, aur lagbhag kitne honge?');
+      q('Do you need a working cart/checkout UI, or a showcase with a "Contact to order" button?', 'Working cart/checkout UI chahiye, ya showcase jisme "Contact to order" button ho?');
+    }
+    if (/(login|signup|auth|account|user profile|membership)/.test(p)) {
+      confidence -= 20;
+      q('Should sign-in be email+password, Google, or just a UI mockup?', 'Sign-in email+password chahiye, Google, ya sirf UI mockup?');
+    }
+    if (/(database|backend|api|save data|store data|inventory)/.test(p)) {
+      confidence -= 20;
+      q('This builds a front-end site — data can be saved in the browser (localStorage). Is that okay, or is this a design mockup?', 'Ye front-end site banata hai — data browser (localStorage) me save ho sakta hai. Chalega, ya sirf design mockup chahiye?');
+    }
+    if (/(booking|appointment|reservation|schedule)/.test(p)) {
+      confidence -= 15;
+      q('What is being booked, and what details should the booking form collect?', 'Kis cheez ki booking hai, aur booking form me kya-kya details leni hain?');
+    }
+    // Vague one-liners with no style/section info → ask the basics (but
+    // phrased for THIS request, not a fixed quiz).
+    if (confidence < 80 && !questions.length) {
+      q('What look do you want — dark & modern, light & clean, or colorful?', 'Kaisa look chahiye — dark & modern, light & clean, ya colorful?');
+      q('Which sections matter most (hero, gallery, pricing, contact…)?', 'Kaunse sections sabse zaroori hain (hero, gallery, pricing, contact…)?');
+    }
+    return { confidence: Math.max(0, Math.min(100, confidence)), questions: questions.slice(0, 3), hi };
+  }
+
+  // A build waiting on the user's answers (Replit-style clarification).
+  let pendingBrief = null;
+
   const CAPABILITY_LINE_EN = "Here's what I can do for you: build complete websites & landing pages, make HTML5 canvas games, edit any project with follow-up messages, and deploy your site live with one click. Just describe what you want to build!";
   const CAPABILITY_LINE_HI = "Main aapke liye ye kar sakta hoon: poori website / landing page bana sakta hoon, HTML5 canvas games bana sakta hoon, follow-up messages se koi bhi project edit kar sakta hoon, aur one-click me site live deploy kar sakta hoon. Bas batao kya banana hai!";
 
@@ -3835,6 +3913,7 @@ loop();
     setBuildStatus('Building', 'building');
 
     const genPromise = apiGenerateCode(composeBuildPrompt(finalPrompt), state.projectMode); // start the real call now
+    genPromise.catch(() => {}); // it's awaited below — this just silences the early-rejection console noise
 
     // Deep-analysis phase — deliberate, step-by-step reasoning shown to the
     // user (no instant flash answers; the model call runs in parallel).
@@ -3969,8 +4048,16 @@ loop();
     const key = detectApiKey(prompt);
     if (key) { addSecretPromptBlock(key); return; }
 
-    if (intent === 'chat') runChat(prompt);
-    else runBuild(prompt);
+    if (intent === 'chat') { runChat(prompt); return; }
+
+    // Replit-style: high confidence → build now; low → ask targeted questions.
+    const brief = assessBuildBrief(prompt);
+    if (brief.confidence >= 80 || !brief.questions.length) { runBuild(prompt); return; }
+    pendingBrief = { base: prompt };
+    const qs = brief.questions.map((s, i) => `${i + 1}) ${s}`).join('\n');
+    addAssistantMessage(brief.hi
+      ? `Sahi direction me banane ke liye bas ${brief.questions.length} cheezein batao:\n${qs}\n\n(Ya likho "build karo" — main best guess se bana dunga.)`
+      : `To build this right, just tell me ${brief.questions.length} thing${brief.questions.length > 1 ? 's' : ''}:\n${qs}\n\n(Or say "just build" and I'll go with my best guess.)`);
   }
 
   /* ============================================================
@@ -4001,6 +4088,16 @@ loop();
     if (!v.trim()) return;
     const key = detectApiKey(v);
     if (key) { addUserMessage(v); addSecretPromptBlock(key); return; }
+    // Answers to a pending clarification → fold them in and build.
+    if (pendingBrief) {
+      addUserMessage(v);
+      const base = pendingBrief.base;
+      pendingBrief = null;
+      const skip = /\b(just build|build karo|bana do|banado|best guess|jo theek lage)\b/i.test(v);
+      addAssistantMessage(isHindiish(v) ? 'Perfect — ab poori picture clear hai. Building! 🛠️' : 'Perfect — now I have the full picture. Building! 🛠️');
+      runBuild(skip ? base : `${base}\n\nUser's answers to my clarifying questions (follow these carefully): ${v}`);
+      return;
+    }
     // Normal conversation in the build console gets a conversational answer —
     // only edit/build requests touch the website code.
     const editRe = /\b(change|add|remove|delete|update|fix|make|set|replace|swap|edit|badlo|badal|hatao|hata|jodo|jod|kar ?do|karo|lagao|laga|bana|colou?r|background|font|text|title|button|section|image|animation|dark|light|bigger|smaller|upar|neeche)\b/i;
