@@ -86,16 +86,21 @@ FIREBASE_MESSAGING_SENDER_ID optional
 
 Get these from Firebase Console → Project settings → **your Web app's config**. Enable Google as a sign-in provider and add your domain (localhost is allowed by default) under Authentication → Settings → Authorized domains.
 
-## Code generation — Groq (default) + custom models
+## Code generation — Hugging Face chain (default) + Groq fallback + custom models
 
-`POST /api/generate-code` returns a complete, self-contained HTML document. It works with **any OpenAI-compatible chat-completions API**. The server default is Groq:
+`POST /api/generate-code` returns a complete, self-contained HTML document. The server's default engine is a **smart fallback chain over Hugging Face's router**: several powerful models are tried one by one (rate-limited/down models are skipped automatically), with Groq as the final fallback — so users essentially never hit a rate-limit error:
 
 ```
-GROQ_API_KEY    your Groq API key
-GROQ_MODEL      model id (optional, default: llama-3.3-70b-versatile)
+HF_API_TOKEN     your Hugging Face access token (recommended — powers the model chain AND image generation)
+HF_CHAT_MODELS   optional — comma-separated model ids to override the default chain
+HF_IMAGE_MODELS  optional — comma-separated text-to-image model ids
+GROQ_API_KEY     optional — final fallback engine
+GROQ_MODEL       model id (optional, default: llama-3.3-70b-versatile)
 ```
 
-Without `GROQ_API_KEY` the route returns `501` and the front-end falls back to its built-in themed demo generator, so the whole UI still works.
+Get an HF token free at **huggingface.co → Settings → Access Tokens** (a fine-grained token with "Make calls to Inference Providers" permission).
+
+**Images inside generated sites:** the generator marks photo spots with `ai-img: description` placeholders and the server swaps them for real AI-generated images (FLUX.1-schnell → SDXL fallback) as inline data URLs — or a tasteful gradient SVG when no `HF_API_TOKEN` is set. There's also a direct `POST /api/generate-image { prompt }` endpoint.
 
 ### Custom models (Settings → Add Model)
 

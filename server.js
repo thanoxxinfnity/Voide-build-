@@ -572,6 +572,7 @@ const SYSTEM_PROMPT = [
   '- Modern, beautiful, responsive design that looks great on mobile and desktop.',
   '- Use semantic HTML, accessible markup, and tasteful animations.',
   '- Do NOT reference any external files, frameworks, or CDNs — everything self-contained.',
+  '- Where a photo or illustration would make the site better, use <img src="ai-img: short vivid description of the image"> (up to 3 per site, always include width/height CSS) — the platform replaces these with real AI-generated images automatically.',
 ].join('\n');
 
 // Canvas Mode — for building 2D games/interactive graphics with <canvas>.
@@ -699,6 +700,108 @@ function callProvider(cfg, system, user, opts) {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Hugging Face + smart fallback chain                               */
+/*                                                                    */
+/*  With HF_API_TOKEN set, generation runs through Hugging Face's     */
+/*  OpenAI-compatible router across SEVERAL powerful models, one by   */
+/*  one — if a model is rate-limited, loading or down, the next one   */
+/*  answers instead. Groq (if configured) is the final fallback, so   */
+/*  users basically never see a rate-limit error.                     */
+/* ------------------------------------------------------------------ */
+const HF_TOKEN = process.env.HF_API_TOKEN || process.env.HUGGINGFACE_API_KEY || '';
+const HF_ROUTER = 'https://router.huggingface.co/v1';
+
+// Ordered: strongest coder models first. Any that error simply get skipped.
+const HF_CHAT_MODELS = (process.env.HF_CHAT_MODELS || [
+  'Qwen/Qwen2.5-Coder-32B-Instruct',
+  'deepseek-ai/DeepSeek-V3-0324',
+  'meta-llama/Llama-3.3-70B-Instruct',
+  'Qwen/Qwen2.5-72B-Instruct',
+  'mistralai/Mistral-Small-24B-Instruct-2501',
+].join(',')).split(',').map((s) => s.trim()).filter(Boolean);
+
+// Text-to-image models for pictures INSIDE generated websites.
+const HF_IMAGE_MODELS = (process.env.HF_IMAGE_MODELS || [
+  'black-forest-labs/FLUX.1-schnell',
+  'stabilityai/stable-diffusion-xl-base-1.0',
+].join(',')).split(',').map((s) => s.trim()).filter(Boolean);
+
+// The default engine chain: every HF model in order, then Groq.
+function defaultChain() {
+  const chain = [];
+  if (HF_TOKEN) {
+    for (const m of HF_CHAT_MODELS) {
+      chain.push({ type: 'openai', endpoint: HF_ROUTER, apiKey: HF_TOKEN, model: m });
+    }
+  }
+  if (process.env.GROQ_API_KEY) {
+    chain.push({ type: 'openai', endpoint: 'https://api.groq.com/openai/v1', apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL });
+  }
+  return chain;
+}
+
+// Try each engine in order until one answers.
+async function callWithFallback(chain, system, user, opts) {
+  let lastErr = null;
+  for (const cfg of chain) {
+    try {
+      const out = await callProvider(cfg, system, user, opts);
+      if (out && String(out).trim()) return { raw: out, model: cfg.model };
+      lastErr = new Error('empty response');
+    } catch (err) {
+      console.warn(`model ${cfg.model} failed (${err.status || '?'}): ${err.message.slice(0, 120)} — trying next`);
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error('no models configured');
+}
+
+// Generate one image via HF (tries each image model), → data URL or null.
+async function hfGenerateImage(prompt) {
+  if (!HF_TOKEN) return null;
+  for (const model of HF_IMAGE_MODELS) {
+    try {
+      const r = await fetch(`https://router.huggingface.co/hf-inference/models/${model}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${HF_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputs: String(prompt).slice(0, 300) }),
+      });
+      if (!r.ok) { console.warn(`image model ${model} → ${r.status}`); continue; }
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length < 1000) continue; // an error blob, not an image
+      const mime = r.headers.get('content-type') || 'image/jpeg';
+      return `data:${mime};base64,${buf.toString('base64')}`;
+    } catch (err) {
+      console.warn(`image model ${model} failed: ${err.message.slice(0, 100)}`);
+    }
+  }
+  return null;
+}
+
+// A pretty gradient SVG stand-in when image generation isn't available.
+function placeholderImage(text) {
+  const label = String(text || 'image').slice(0, 40).replace(/[<>&"]/g, '');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#6366f1"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient></defs><rect width="800" height="500" fill="url(#g)"/><text x="400" y="255" font-family="sans-serif" font-size="26" fill="rgba(255,255,255,.85)" text-anchor="middle">${label}</text></svg>`;
+  return 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+}
+
+// Replace <img src="ai-img: description"> placeholders the model emitted
+// with real HF-generated images (max 3 per site; graceful fallback).
+async function inlineAiImages(html) {
+  const matches = [...html.matchAll(/src=["']ai-img:\s*([^"']{3,200})["']/gi)];
+  if (!matches.length) return html;
+  const unique = [...new Set(matches.map((m) => m[1].trim()))].slice(0, 3);
+  let out = html;
+  for (const desc of unique) {
+    const img = (await hfGenerateImage(desc)) || placeholderImage(desc);
+    out = out.split(`ai-img: ${desc}`).join(img).split(`ai-img:${desc}`).join(img);
+  }
+  // Any leftovers (beyond the 3-image budget) get placeholders too.
+  out = out.replace(/src=["']ai-img:\s*([^"']{3,200})["']/gi, (_, d) => `src="${placeholderImage(d)}"`);
+  return out;
+}
+
 /**
  * POST /api/generate-code   (requires Authorization: Bearer <token>)
  * Body:    { prompt, projectId?, userId?, provider?, mode? }
@@ -716,36 +819,23 @@ app.post('/api/generate-code', requireAuth, async (req, res) => {
   }
   const systemPrompt = mode === 'canvas' ? CANVAS_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
-  // Pick the provider: a user-supplied model wins, else server Groq.
-  // (Missing endpoints are filled with the provider's official URL.)
-  let cfg;
-  let modelName = 'default';
-  if (provider && provider.model) {
-    cfg = {
-      type: provider.type || 'openai',
-      endpoint: provider.endpoint || '',
-      apiKey: provider.apiKey || '',
-      model: provider.model,
-    };
-    modelName = provider.model;
-  } else if (process.env.GROQ_API_KEY) {
-    cfg = { type: 'openai', endpoint: 'https://api.groq.com/openai/v1', apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL };
-    modelName = GROQ_MODEL;
-  } else {
-    return res.status(501).json({ error: 'No AI model configured. Add one in Settings → Models (OpenAI, Claude, Gemini) or set GROQ_API_KEY in environment variables.' });
+  // A user-supplied model wins; otherwise the smart fallback chain
+  // (all Hugging Face models one by one, then Groq) handles it.
+  const chain = (provider && provider.model)
+    ? [{ type: provider.type || 'openai', endpoint: provider.endpoint || '', apiKey: provider.apiKey || '', model: provider.model }]
+    : defaultChain();
+
+  if (!chain.length) {
+    return res.status(501).json({ error: 'No AI model configured. Add one in Settings → Models, or set HF_API_TOKEN / GROQ_API_KEY in environment variables.' });
   }
 
-  // Check model capacity and load balance
+  const modelName = chain[0].model;
   const availableModel = getAvailableModel(modelName);
-  if (!availableModel || (modelQueues.get(availableModel)?.active >= modelQueues.get(availableModel)?.max)) {
-    return res.status(503).json({ error: 'Our models are busy. Please try again in 1 to 3 minutes. Sorry!' });
-  }
-
   trackModelRequest(availableModel, 'start');
 
   let raw;
   try {
-    raw = await callProvider(cfg, systemPrompt, prompt);
+    ({ raw } = await callWithFallback(chain, systemPrompt, prompt));
   } catch (err) {
     trackModelRequest(availableModel, 'end');
     console.error('generation error:', err.message, err.detail || '');
@@ -755,11 +845,26 @@ app.post('/api/generate-code', requireAuth, async (req, res) => {
   trackModelRequest(availableModel, 'end');
 
   // Strip accidental markdown fences if the model added them.
-  const code = String(raw || '').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  let code = String(raw || '').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
   if (!code || !/<html|<!doctype/i.test(code)) {
     return res.status(502).json({ error: 'generation returned invalid HTML' });
   }
+  // Swap ai-img placeholders for real AI-generated images (HF) or pretty SVGs.
+  try { code = await inlineAiImages(code); } catch { /* images are best-effort */ }
   return res.json({ code });
+});
+
+/**
+ * POST /api/generate-image   (requires Authorization: Bearer <token>)
+ * Body: { prompt } → { image: <data URL> }
+ * Direct text-to-image via the Hugging Face image-model chain.
+ */
+app.post('/api/generate-image', requireAuth, async (req, res) => {
+  const { prompt } = req.body || {};
+  if (!prompt || !String(prompt).trim()) return res.status(400).json({ error: 'prompt is required' });
+  const img = await hfGenerateImage(prompt);
+  if (!img) return res.status(501).json({ error: 'Image generation needs HF_API_TOKEN configured', image: placeholderImage(prompt) });
+  res.json({ image: img });
 });
 
 /* ------------------------------------------------------------------ */
@@ -780,14 +885,10 @@ app.post('/api/chat', requireAuth, async (req, res) => {
   const { message, history, provider } = req.body || {};
   if (!message || !String(message).trim()) return res.status(400).json({ error: 'message is required' });
 
-  let cfg;
-  if (provider && provider.model) {
-    cfg = { type: provider.type || 'openai', endpoint: provider.endpoint || '', apiKey: provider.apiKey || '', model: provider.model };
-  } else if (process.env.GROQ_API_KEY) {
-    cfg = { type: 'openai', endpoint: 'https://api.groq.com/openai/v1', apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL };
-  } else {
-    return res.status(501).json({ error: 'no model configured' });
-  }
+  const chain = (provider && provider.model)
+    ? [{ type: provider.type || 'openai', endpoint: provider.endpoint || '', apiKey: provider.apiKey || '', model: provider.model }]
+    : defaultChain();
+  if (!chain.length) return res.status(501).json({ error: 'no model configured' });
 
   // Fold recent turns into the prompt so replies stay in context.
   const turns = Array.isArray(history) ? history.slice(-10) : [];
@@ -796,7 +897,7 @@ app.post('/api/chat', requireAuth, async (req, res) => {
 
   try {
     // Chat replies are short — cap tokens so BYOK credits are never wasted.
-    const raw = await callProvider(cfg, CHAT_SYSTEM_PROMPT, userMsg, { maxTokens: 512 });
+    const { raw } = await callWithFallback(chain, CHAT_SYSTEM_PROMPT, userMsg, { maxTokens: 512 });
     const reply = String(raw || '').trim().slice(0, 4000);
     if (!reply) return res.status(502).json({ error: 'empty reply' });
     res.json({ reply });
@@ -1039,7 +1140,8 @@ wss.on('connection', (ws, req) => {
 
 server.listen(PORT, () => {
   console.log(`AI Web Studio running at http://localhost:${PORT}`);
-  console.log(`  Code generation : ${process.env.GROQ_API_KEY ? 'Groq (live)' : 'demo engine (no GROQ_API_KEY)'}`);
+  console.log(`  Code generation : ${HF_TOKEN ? `Hugging Face chain (${HF_CHAT_MODELS.length} models)${process.env.GROQ_API_KEY ? ' + Groq fallback' : ''}` : process.env.GROQ_API_KEY ? 'Groq only' : 'none (set HF_API_TOKEN or GROQ_API_KEY)'}`);
+  console.log(`  Image generation: ${HF_TOKEN ? `Hugging Face (${HF_IMAGE_MODELS.length} models)` : 'off (set HF_API_TOKEN)'}`);
   console.log(`  Deploy          : ${process.env.VERCEL_TOKEN ? 'Vercel (live)' : 'demo URL (no VERCEL_TOKEN)'}`);
   console.log(`  GitHub mirror   : ${process.env.GITHUB_TOKEN && process.env.GITHUB_OWNER ? 'on' : 'off'}`);
   console.log(`  Auth            : ${storeWritable ? 'file store (data/users.json)' : 'in-memory (disk not writable)'}`);
