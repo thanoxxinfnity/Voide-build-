@@ -22,6 +22,8 @@ services:
         sync: false
       - key: VERCEL_TEAM_ID
         sync: false
+      - key: BLOB_READ_WRITE_TOKEN
+        sync: false
       - key: GITHUB_TOKEN
         sync: false
       - key: GITHUB_OWNER

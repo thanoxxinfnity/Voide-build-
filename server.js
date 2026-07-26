@@ -806,8 +806,8 @@ async function callWithFallback(chain, system, user, opts) {
   throw lastErr || new Error('no models configured');
 }
 
-// A single attempt at one HF image model. Returns a data URL, or throws with
-// { retryAfterMs } set when the model is cold-loading (HF's documented
+// A single attempt at one HF image model. Returns { buf, mime }, or throws
+// with { retryAfterMs } set when the model is cold-loading (HF's documented
 // behavior — it returns 503 + estimated_time while it spins up).
 async function hfImageAttempt(model, prompt) {
   const controller = new AbortController();
@@ -831,15 +831,43 @@ async function hfImageAttempt(model, prompt) {
     }
     const buf = Buffer.from(await r.arrayBuffer());
     if (buf.length < 1000) throw new Error(`image model ${model} returned an unexpectedly small file`);
-    return `data:${mime || 'image/jpeg'};base64,${buf.toString('base64')}`;
+    return { buf, mime: mime || 'image/jpeg' };
   } finally {
     clearTimeout(timeout);
   }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Vercel Blob — real hosted URLs for generated images (v0.dev-style) */
+/*  instead of inlining them as base64 data URLs. A generated site     */
+/*  with 3 real photos can easily be 1-2MB as inline base64; as Blob   */
+/*  URLs the HTML stays tiny and the images load/cache like normal     */
+/*  images. Falls back to inline data URLs when BLOB_READ_WRITE_TOKEN  */
+/*  isn't set, so nothing breaks without it.                           */
+/* ------------------------------------------------------------------ */
+const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN || '';
+let vercelBlobPut = null;
+if (BLOB_TOKEN) {
+  try { vercelBlobPut = require('@vercel/blob').put; }
+  catch { console.warn('@vercel/blob not installed — image uploads will stay inline as base64'); }
+}
+
+async function uploadToBlob(buf, mime, prefix) {
+  if (!vercelBlobPut) return null;
+  const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : mime.includes('svg') ? 'svg' : 'jpg';
+  const filename = `voide/${prefix}-${crypto.randomBytes(8).toString('hex')}.${ext}`;
+  const attempt = vercelBlobPut(filename, buf, { access: 'public', contentType: mime, token: BLOB_TOKEN, addRandomSuffix: false })
+    .then((blob) => blob.url)
+    .catch((err) => { console.warn('Vercel Blob upload failed, falling back to inline base64:', err.message); return null; });
+  // Never let a slow/hung Blob upload stall the whole build — a bounded
+  // wait, then fall back to inline base64 just like a failed upload.
+  return withBudget(attempt, 15000);
+}
+
 // Generate one image via HF (tries each image model, retrying once on a
 // cold-start "loading" response since that's extremely common on the free
-// tier), → data URL or null if every model/attempt failed.
+// tier). Returns a real Blob URL when BLOB_READ_WRITE_TOKEN is configured,
+// otherwise an inline base64 data URL — or null if every attempt failed.
 // kind: 'photo' (default) or 'logo' (adds vector/icon/transparent styling to the prompt).
 async function hfGenerateImage(prompt, kind = 'photo') {
   if (!HF_TOKEN) return null;
@@ -849,7 +877,9 @@ async function hfGenerateImage(prompt, kind = 'photo') {
   for (const model of HF_IMAGE_MODELS) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        return await hfImageAttempt(model, finalPrompt);
+        const { buf, mime } = await hfImageAttempt(model, finalPrompt);
+        const blobUrl = await uploadToBlob(buf, mime, kind);
+        return blobUrl || `data:${mime};base64,${buf.toString('base64')}`;
       } catch (err) {
         if (err.retryAfterMs && attempt === 0) {
           console.warn(`${err.message} — model is cold-starting, retrying in ${err.retryAfterMs}ms`);
@@ -1457,6 +1487,7 @@ server.listen(PORT, () => {
   console.log(`AI Web Studio running at http://localhost:${PORT}`);
   console.log(`  Code generation : ${HF_TOKEN ? `Hugging Face chain (${HF_CHAT_MODELS.length} models)${process.env.GROQ_API_KEY ? ' + Groq fallback' : ''}` : process.env.GROQ_API_KEY ? 'Groq only' : 'none (set HF_API_TOKEN or GROQ_API_KEY)'}`);
   console.log(`  Image generation: ${HF_TOKEN ? `Hugging Face (${HF_IMAGE_MODELS.length} models)` : 'off (set HF_API_TOKEN)'}`);
+  console.log(`  Image storage   : ${vercelBlobPut ? 'Vercel Blob (real hosted URLs)' : 'inline base64 (set BLOB_READ_WRITE_TOKEN for hosted URLs)'}`);
   console.log(`  Deploy          : ${process.env.VERCEL_TOKEN ? 'Vercel (live)' : 'demo URL (no VERCEL_TOKEN)'}`);
   console.log(`  GitHub mirror   : ${process.env.GITHUB_TOKEN && process.env.GITHUB_OWNER ? 'on' : 'off'}`);
   console.log(`  Auth storage    : ${pgPool ? 'Postgres (persists across redeploys)' : storeWritable ? 'local file (⚠ wiped on redeploy on most cloud hosts — set DATABASE_URL to fix)' : 'in-memory (disk not writable)'}`);
