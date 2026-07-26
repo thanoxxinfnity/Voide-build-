@@ -2741,15 +2741,26 @@
     custom:     { model: 'model-id',                   endpoint: 'https://your-host/v1',                         optional: false },
   };
 
-  // A few well-known NVIDIA NIM catalog model ids (build.nvidia.com) offered
-  // as one-click suggestions — the field stays freely editable since NVIDIA
-  // adds/renames models over time.
+  // Well-known NVIDIA NIM catalog model ids (build.nvidia.com) offered as
+  // one-click suggestions — NVIDIA's full catalog is larger than this and
+  // changes over time, so the field stays freely editable; copy any exact
+  // id straight from your own build.nvidia.com model page if it's not here.
   const NVIDIA_MODEL_SUGGESTIONS = [
     'qwen/qwen2.5-coder-32b-instruct',
     'deepseek-ai/deepseek-r1',
+    'deepseek-ai/deepseek-r1-distill-llama-70b',
     'meta/llama-3.3-70b-instruct',
     'meta/llama-3.1-405b-instruct',
+    'meta/llama-3.1-70b-instruct',
+    'meta/llama-3.1-8b-instruct',
+    'nvidia/llama-3.1-nemotron-70b-instruct',
     'mistralai/mixtral-8x22b-instruct-v0.1',
+    'mistralai/mistral-large',
+    'qwen/qwen2.5-72b-instruct',
+    'microsoft/phi-3-medium-4k-instruct',
+    'google/gemma-2-27b-it',
+    'ibm/granite-34b-code-instruct',
+    '01-ai/yi-large',
   ];
 
   // Adjust the form fields to the selected provider.
