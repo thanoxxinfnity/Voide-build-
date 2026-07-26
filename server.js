@@ -26,6 +26,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
 const { WebSocketServer } = require('ws');
+const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,30 +36,64 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 /* ------------------------------------------------------------------ */
 /*  Authentication — email + password, hashed, signed tokens          */
-/*  No third-party auth deps; users persist to data/users.json.       */
+/*                                                                     */
+/*  Persistence: with DATABASE_URL set (Postgres — e.g. a free         */
+/*  Supabase project), all user/team/project data survives redeploys   */
+/*  by living in a real database instead of the container's local      */
+/*  disk. Render's free web services do NOT keep local files across    */
+/*  a redeploy/restart — data/users.json would otherwise be wiped on   */
+/*  every single deploy. Without DATABASE_URL, the app falls back to   */
+/*  the original local-file behavior so nothing breaks for anyone who  */
+/*  hasn't set up a database yet.                                      */
 /* ------------------------------------------------------------------ */
 const DATA_DIR = path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 let store = { secret: null, users: {} };
 let storeWritable = true;
 
+const DATABASE_URL = process.env.DATABASE_URL || '';
+const pgPool = DATABASE_URL
+  ? new Pool({ connectionString: DATABASE_URL, ssl: DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false } })
+  : null;
+
+async function ensureStoreTable() {
+  await pgPool.query('CREATE TABLE IF NOT EXISTS app_state (id INT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())');
+}
+
+// Fire-and-forget: the in-memory `store` is already the source of truth for
+// this running process (every mutation happens on it directly before this
+// is called), so callers never need to await a save — it only needs to land
+// before the NEXT restart, not before the current response.
 function saveStore() {
+  if (pgPool) {
+    return pgPool.query(
+      'INSERT INTO app_state (id, data, updated_at) VALUES (1, $1, now()) ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = now()',
+      [JSON.stringify(store)],
+    ).catch((err) => console.error('saveStore (postgres) failed:', err.message));
+  }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(USERS_FILE, JSON.stringify(store));
   } catch (err) {
     storeWritable = false; // fall back to in-memory for this session
   }
+  return Promise.resolve();
 }
-function loadStore() {
-  try { store = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')); } catch { /* fresh store */ }
+
+async function loadStore() {
+  if (pgPool) {
+    await ensureStoreTable();
+    const { rows } = await pgPool.query('SELECT data FROM app_state WHERE id = 1');
+    store = rows[0] ? rows[0].data : {};
+  } else {
+    try { store = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')); } catch { /* fresh store */ }
+  }
   if (!store.users) store.users = {};
   if (!store.teams) store.teams = {};
   if (!store.projects) store.projects = {};
   if (!store.joinRequests) store.joinRequests = {};
   if (!store.secret) { store.secret = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex'); saveStore(); }
 }
-loadStore();
 
 /* ================================================================
  *  Model Load Balancing — track active requests per model
@@ -918,6 +953,52 @@ async function hfGenerateSpeech(text) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Secret-leak sanitization (defense in depth).                       */
+/*                                                                     */
+/*  Real secret VALUES are never sent to the model in the first place  */
+/*  — only secret NAMES are (see composeBuildPrompt/secretNames on the */
+/*  client), and provider API keys are only ever used in HTTP headers, */
+/*  never in prompt text. This is a second, independent safety net:    */
+/*  before any generated code reaches the browser, scan it for every   */
+/*  real secret value this server actually holds and mask it, plus a   */
+/*  few well-known API key SHAPES as a generic backstop.                */
+/* ------------------------------------------------------------------ */
+function knownSecretValues(provider) {
+  const vals = [
+    process.env.HF_API_TOKEN, process.env.HUGGINGFACE_API_KEY, process.env.GROQ_API_KEY,
+    process.env.VERCEL_TOKEN, process.env.GITHUB_TOKEN, process.env.AUTH_SECRET,
+    process.env.FIREBASE_API_KEY, provider && provider.apiKey,
+  ];
+  return vals.filter((v) => typeof v === 'string' && v.trim().length >= 8);
+}
+
+const SECRET_SHAPE_PATTERNS = [
+  /\bsk-ant-[A-Za-z0-9_-]{20,}\b/g,      // Anthropic
+  /\bsk-[A-Za-z0-9]{20,}\b/g,             // OpenAI-style
+  /\bAIzaSy[A-Za-z0-9_-]{20,}\b/g,        // Google API key
+  /\bghp_[A-Za-z0-9]{30,}\b/g,            // GitHub PAT
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,    // GitHub fine-grained PAT
+  /\bhf_[A-Za-z0-9]{20,}\b/g,             // Hugging Face token
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/g,  // any PEM private key block
+];
+
+function sanitizeSecretLeaks(code, provider) {
+  let out = String(code || '');
+  let leaked = 0;
+  for (const val of knownSecretValues(provider)) {
+    if (out.includes(val)) {
+      out = out.split(val).join('[REDACTED_SECRET]');
+      leaked++;
+    }
+  }
+  for (const re of SECRET_SHAPE_PATTERNS) {
+    if (re.test(out)) { out = out.replace(re, '[REDACTED_SECRET]'); leaked++; }
+  }
+  if (leaked) console.error(`⚠ sanitizeSecretLeaks: masked ${leaked} apparent secret(s) found in generated output — this should never happen since values are never sent to the model, investigate.`);
+  return out;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Agentic self-correction — ReAct-style loop for generated sites.    */
 /*                                                                     */
 /*  Think  → the model writes the site.                                */
@@ -1060,6 +1141,7 @@ app.post('/api/generate-code', requireAuth, async (req, res) => {
 
   // Swap ai-img placeholders for real AI-generated images (HF) or pretty SVGs.
   try { code = await inlineAiImages(code); } catch { /* images are best-effort */ }
+  code = sanitizeSecretLeaks(code, provider);
   return res.json({ code });
 });
 
@@ -1123,8 +1205,9 @@ app.post('/api/chat', requireAuth, async (req, res) => {
   try {
     // Chat replies are short — cap tokens so BYOK credits are never wasted.
     const { raw } = await callWithFallback(chain, CHAT_SYSTEM_PROMPT, userMsg, { maxTokens: 512 });
-    const reply = String(raw || '').trim().slice(0, 4000);
+    let reply = String(raw || '').trim().slice(0, 4000);
     if (!reply) return res.status(502).json({ error: 'empty reply' });
+    reply = sanitizeSecretLeaks(reply, provider);
     res.json({ reply });
   } catch (err) {
     console.error('chat error:', err.message);
@@ -1363,13 +1446,21 @@ wss.on('connection', (ws, req) => {
   });
 });
 
+// Data must be loaded before the server starts accepting requests.
+loadStore().catch((err) => {
+  console.error('Failed to load store from Postgres — falling back to in-memory for this run:', err.message);
+  store = { secret: process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex'), users: {}, teams: {}, projects: {}, joinRequests: {} };
+}).finally(() => startServer());
+
+function startServer() {
 server.listen(PORT, () => {
   console.log(`AI Web Studio running at http://localhost:${PORT}`);
   console.log(`  Code generation : ${HF_TOKEN ? `Hugging Face chain (${HF_CHAT_MODELS.length} models)${process.env.GROQ_API_KEY ? ' + Groq fallback' : ''}` : process.env.GROQ_API_KEY ? 'Groq only' : 'none (set HF_API_TOKEN or GROQ_API_KEY)'}`);
   console.log(`  Image generation: ${HF_TOKEN ? `Hugging Face (${HF_IMAGE_MODELS.length} models)` : 'off (set HF_API_TOKEN)'}`);
   console.log(`  Deploy          : ${process.env.VERCEL_TOKEN ? 'Vercel (live)' : 'demo URL (no VERCEL_TOKEN)'}`);
   console.log(`  GitHub mirror   : ${process.env.GITHUB_TOKEN && process.env.GITHUB_OWNER ? 'on' : 'off'}`);
-  console.log(`  Auth            : ${storeWritable ? 'file store (data/users.json)' : 'in-memory (disk not writable)'}`);
+  console.log(`  Auth storage    : ${pgPool ? 'Postgres (persists across redeploys)' : storeWritable ? 'local file (⚠ wiped on redeploy on most cloud hosts — set DATABASE_URL to fix)' : 'in-memory (disk not writable)'}`);
   console.log(`  Google sign-in  : ${process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_API_KEY ? `on (project ${process.env.FIREBASE_PROJECT_ID})` : 'off (set FIREBASE_PROJECT_ID + FIREBASE_API_KEY)'}`);
   console.log(`  Live collab     : ws://localhost:${PORT}/ws`);
 });
+}
