@@ -723,10 +723,13 @@ function callProvider(cfg, system, user, opts) {
 const HF_TOKEN = process.env.HF_API_TOKEN || process.env.HUGGINGFACE_API_KEY || '';
 const HF_ROUTER = 'https://router.huggingface.co/v1';
 
-// Ordered: strongest coder models first. Any that error simply get skipped.
+// Ordered: DeepSeek-V3 first — the strongest all-round pick for BOTH design
+// taste (real, non-generic copy and layout judgement) and clean code, ahead
+// of the coder-specialist models which are more correctness- than
+// aesthetics-tuned. Any model that errors/rate-limits simply gets skipped.
 const HF_CHAT_MODELS = (process.env.HF_CHAT_MODELS || [
-  'Qwen/Qwen2.5-Coder-32B-Instruct',
   'deepseek-ai/DeepSeek-V3-0324',
+  'Qwen/Qwen2.5-Coder-32B-Instruct',
   'meta-llama/Llama-3.3-70B-Instruct',
   'Qwen/Qwen2.5-72B-Instruct',
   'mistralai/Mistral-Small-24B-Instruct-2501',
@@ -895,7 +898,11 @@ app.post('/api/generate-code', requireAuth, async (req, res) => {
 
   let raw;
   try {
-    ({ raw } = await callWithFallback(chain, systemPrompt, prompt));
+    // Rich, detailed sites (real copy, full design system, 3D/animation
+    // code) run long — 8000 tokens was truncating output mid-file on
+    // anything non-trivial, which is what "cheap/broken" output usually
+    // was. 16k gives real headroom for a complete, un-cut document.
+    ({ raw } = await callWithFallback(chain, systemPrompt, prompt, { maxTokens: 16000 }));
   } catch (err) {
     trackModelRequest(availableModel, 'end');
     console.error('generation error:', err.message, err.detail || '');
@@ -908,6 +915,15 @@ app.post('/api/generate-code', requireAuth, async (req, res) => {
   let code = String(raw || '').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
   if (!code || !/<html|<!doctype/i.test(code)) {
     return res.status(502).json({ error: 'generation returned invalid HTML' });
+  }
+  // The model got cut off mid-document (hit the token limit) — best-effort
+  // close whatever's open so the preview isn't a blank/broken page, and log
+  // it so we can see how often this actually happens.
+  if (!/<\/html>\s*$/i.test(code)) {
+    console.warn(`generation truncated (${code.length} chars) — closing tags best-effort`);
+    if (/<script(?![^>]*\/>)[^>]*>(?![\s\S]*<\/script>)/i.test(code)) code += '\n</script>';
+    if (!/<\/body>/i.test(code)) code += '\n</body>';
+    if (!/<\/html>/i.test(code)) code += '\n</html>';
   }
   // Swap ai-img placeholders for real AI-generated images (HF) or pretty SVGs.
   try { code = await inlineAiImages(code); } catch { /* images are best-effort */ }
