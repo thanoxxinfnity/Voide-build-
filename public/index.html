@@ -1947,11 +1947,17 @@
 
   async function apiGenerateCode(prompt, mode) {
     if (!state.auth?.user) throw Object.assign(new Error('Sign in required'), { authRequired: true });
+
+    // Orchestra: the whole team builds one site, a file each, boss assembles.
+    if (isOrchestraMode() && state.models.length >= 2 && mode !== 'canvas') {
+      return apiOrchestraBuild(prompt);
+    }
+
     const model = activeModel();
     const payload = { prompt, projectId: state.projectId, userId: state.userId, mode: mode || 'website' };
     // Send the user-selected custom model (server proxies the call), or
     // every added model as a wide fallback chain in "All Models" mode.
-    if (isAllModelsMode() && state.models.length) {
+    if ((isAllModelsMode() || isOrchestraMode()) && state.models.length) {
       payload.providers = allModelProviders();
     } else if (model) {
       payload.provider = { type: model.type || 'openai', endpoint: model.endpoint, apiKey: model.apiKey, model: model.model };
@@ -1977,6 +1983,22 @@
       console.error('[AI Web Studio] Generation failed:', err.message);
       throw err; // Real production mode - don't fall back to mock
     }
+  }
+
+  // Orchestra build: boss model writes a shared spec, the other models
+  // build index.html / styles.css / script.js against it in parallel, then
+  // the boss assembles and fixes any mismatch. Returns the same shape as a
+  // normal generation plus the individual files for the file tree.
+  async function apiOrchestraBuild(prompt) {
+    const res = await fetch('/api/orchestra-build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ prompt, providers: allModelProviders(), bossIndex: orchestraBossIndex() }),
+    });
+    if (res.status === 401) throw Object.assign(new Error('Sign in required'), { authRequired: true });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.code) throw new Error(data.error || 'Orchestra build failed');
+    return { code: data.code, files: data.files, log: data.log, usedBy: data.usedBy, source: 'orchestra' };
   }
 
   async function apiDeploy() {
@@ -2876,13 +2898,22 @@
   }
 
   const ALL_MODELS_ID = '__all__';
+  const ORCHESTRA_ID = '__orchestra__';
   function isAllModelsMode() { return state.activeModelId === ALL_MODELS_ID; }
+  function isOrchestraMode() { return state.activeModelId === ORCHESTRA_ID; }
 
   // Returns the provider config for the active custom model, or null
-  // when the server default (or "All Models") should be used.
+  // when the server default (or a multi-model mode) should be used.
   function activeModel() {
-    if (!state.activeModelId || isAllModelsMode()) return null;
+    if (!state.activeModelId || isAllModelsMode() || isOrchestraMode()) return null;
     return state.models.find((m) => m.id === state.activeModelId) || null;
+  }
+
+  // Which model leads an Orchestra build. Prefers a GLM model if one is
+  // added (the user's pick for "the boss"), else the first model.
+  function orchestraBossIndex() {
+    const i = state.models.findIndex((m) => /glm/i.test(m.model || '') || /glm/i.test(m.label || ''));
+    return i >= 0 ? i : 0;
   }
 
   // "All Models" mode: every model the user has added, tried in order —
@@ -2897,7 +2928,7 @@
   // one added) is active, the build calls the user's own API(s) directly —
   // not the platform's — so credits never apply and there's no limit.
   function usingOwnModel() {
-    if (isAllModelsMode()) return state.models.length > 0;
+    if (isAllModelsMode() || isOrchestraMode()) return state.models.length > 0;
     return !!activeModel();
   }
 
@@ -2909,6 +2940,11 @@
     renderCredits();
     if (id === ALL_MODELS_ID) {
       toast(state.models.length ? `All Models mode — tries all ${state.models.length}, whichever answers first` : 'Add a model first to use All Models', state.models.length ? 'success' : 'error');
+    } else if (id === ORCHESTRA_ID) {
+      const bossLabel = state.models[orchestraBossIndex()]?.label || '—';
+      toast(state.models.length >= 2
+        ? `Orchestra mode — a file each, “${bossLabel}” leads the build`
+        : 'Orchestra needs at least 2 models added', state.models.length >= 2 ? 'success' : 'error');
     } else {
       const m = activeModel();
       toast(m ? `Using “${m.label}” — unlimited, no credits used` : 'Using server default model', 'success');
@@ -3141,6 +3177,18 @@
       });
       all.querySelector('.mdl-pick').addEventListener('click', () => selectModel(ALL_MODELS_ID));
       el.modelsList.appendChild(all);
+
+      // Orchestra — the whole team builds one site, a file each.
+      const bossLabel = state.models[orchestraBossIndex()]?.label || '—';
+      const orch = modelRow({
+        id: ORCHESTRA_ID,
+        label: '🎻 Orchestra',
+        active: isOrchestraMode(),
+        sub: `“${bossLabel}” writes the spec & assembles · the others build HTML / CSS / JS in parallel`,
+        custom: false,
+      });
+      orch.querySelector('.mdl-pick').addEventListener('click', () => selectModel(ORCHESTRA_ID));
+      el.modelsList.appendChild(orch);
     }
 
     // User-added models.
@@ -3179,6 +3227,10 @@
         optAll.value = ALL_MODELS_ID;
         optAll.textContent = `⚡ All Models (${state.models.length})`;
         sel.appendChild(optAll);
+        const optOrch = document.createElement('option');
+        optOrch.value = ORCHESTRA_ID;
+        optOrch.textContent = `🎻 Orchestra — a file each (${state.models.length})`;
+        sel.appendChild(optOrch);
       }
       state.models.forEach((m) => {
         const opt = document.createElement('option');
@@ -4564,11 +4616,19 @@ loop();
     }, 2500);
 
     try {
-      const { code, source } = await genPromise;
+      const { code, source, files, usedBy } = await genPromise;
       clearInterval(heartbeat);
       think.remove();
+      // Orchestra: show who actually did what, so the team build is visible.
+      if (source === 'orchestra' && usedBy) {
+        const credits = createLogBlock();
+        addLogLine(credits, `spec + assembly · ${usedBy.assemble || usedBy.spec || '—'}`, 'ok');
+        if (usedBy.html) addLogLine(credits, `index.html · ${usedBy.html}`, 'ok');
+        if (usedBy.css) addLogLine(credits, `styles.css · ${usedBy.css}`, 'ok');
+        if (usedBy.js) addLogLine(credits, `script.js · ${usedBy.js}`, 'ok');
+      }
       addLogLine(sblock, 'Complete! ✓ Build succeeded', 'ok');
-      renderOutput(code);
+      renderOutput(code, files);
       setBuildStatus('Ready', 'ok');
       if (!usingOwnModel()) { state.credits = Math.max(0, state.credits - GENERATION_COST); saveCredits(); renderCredits(); }
       saveProject();

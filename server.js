@@ -851,16 +851,56 @@ async function uploadToBlob(buf, mime, prefix) {
   return withBudget(attempt, 15000);
 }
 
-// Generate one image via HF (tries each image model, retrying once on a
-// cold-start "loading" response since that's extremely common on the free
-// tier). Returns a real Blob URL when BLOB_READ_WRITE_TOKEN is configured,
-// otherwise an inline base64 data URL — or null if every attempt failed.
-// kind: 'photo' (default) or 'logo' (adds vector/icon/transparent styling to the prompt).
+/* ------------------------------------------------------------------ */
+/*  Pollinations — free, keyless image generation (Flux-based).        */
+/*  Tried FIRST because it needs no API key and no sign-up at all, so  */
+/*  images work out of the box for everyone. Hugging Face stays as the */
+/*  fallback for anyone who has HF_API_TOKEN set.                      */
+/* ------------------------------------------------------------------ */
+const POLLINATIONS_ENABLED = process.env.POLLINATIONS_ENABLED !== 'false';
+const POLLINATIONS_MODEL = process.env.POLLINATIONS_MODEL || 'flux';
+
+async function pollinationsImage(prompt, kind = 'photo') {
+  if (!POLLINATIONS_ENABLED) return null;
+  const size = kind === 'logo' ? { w: 512, h: 512 } : { w: 1024, h: 640 };
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt.slice(0, 400))}`
+    + `?width=${size.w}&height=${size.h}&model=${encodeURIComponent(POLLINATIONS_MODEL)}&nologo=true&seed=${Math.floor(Math.random() * 1e6)}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45000); // Flux can take a while under load
+  try {
+    const r = await fetch(url, { signal: controller.signal });
+    const mime = r.headers.get('content-type') || '';
+    if (!r.ok || !mime.startsWith('image/')) {
+      console.warn(`pollinations → ${r.status} (${mime || 'no content-type'})`);
+      return null;
+    }
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length < 1000) return null;
+    const blobUrl = await uploadToBlob(buf, mime, kind);
+    return blobUrl || `data:${mime};base64,${buf.toString('base64')}`;
+  } catch (err) {
+    console.warn(`pollinations failed: ${err.name === 'AbortError' ? 'timed out' : err.message.slice(0, 120)}`);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// Generate one image: Pollinations first (free, no key), then the Hugging
+// Face model chain (retrying once per model on a cold-start "loading"
+// response, which is very common on the free tier). Returns a real Blob URL
+// when BLOB_READ_WRITE_TOKEN is configured, otherwise an inline base64 data
+// URL — or null if every provider failed.
+// kind: 'photo' (default) or 'logo' (adds vector/icon styling to the prompt).
 async function hfGenerateImage(prompt, kind = 'photo') {
-  if (!HF_TOKEN) return null;
   const finalPrompt = kind === 'logo'
-    ? `minimalist vector logo icon, ${prompt}, flat design, clean lines, centered, simple bold shapes, white background, professional brand mark`
+    ? `minimalist vector logo icon, ${prompt}, flat design, clean lines, centered, simple bold shapes, solid background, professional brand mark`
     : String(prompt);
+
+  const free = await pollinationsImage(finalPrompt, kind);
+  if (free) return free;
+
+  if (!HF_TOKEN) return null;
   for (const model of HF_IMAGE_MODELS) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -977,17 +1017,25 @@ async function hfGenerateSpeech(text) {
 /*  Indic voice above whenever no clone/NVIDIA key is available, so    */
 /*  the Listen buttons keep working either way.                        */
 /*                                                                     */
-/*  NOTE: the exact request/response shape for Magpie on the NIM API   */
-/*  could not be verified from the build environment (outbound calls   */
-/*  to integrate.api.nvidia.com are blocked here), so NVIDIA's own     */
-/*  error body is passed straight through to the caller rather than    */
-/*  being swallowed — if the shape needs adjusting, the real error     */
-/*  says exactly what to change.                                       */
+/*  IMPORTANT — reported 404 from integrate.api.nvidia.com/v1/audio/   */
+/*  speech: NVIDIA's Riva speech NIMs (Magpie included) are generally  */
+/*  NOT served from the OpenAI-compatible /v1 REST surface that the    */
+/*  LLMs use. They're typically exposed over gRPC via NVCF, which a    */
+/*  plain server-side fetch() cannot speak at all. So the endpoint is  */
+/*  fully overridable below: if your model's page on build.nvidia.com  */
+/*  does show an HTTP endpoint, point NVIDIA_TTS_URL at it (and adjust */
+/*  NVIDIA_TTS_BODY_STYLE) and this will work without a code change.   */
+/*  Until then the built-in Hugging Face voice is used automatically.  */
 /* ------------------------------------------------------------------ */
-// Overridable so the cloning path can be pointed at a local mock in tests /
-// at a self-hosted NIM deployment, without touching code.
+// Overridable so the cloning path can be pointed at a local mock in tests,
+// a self-hosted NIM deployment, or whatever HTTP endpoint NVIDIA documents
+// for your specific model — without touching code.
 const NVIDIA_BASE_URL = process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1';
+const NVIDIA_TTS_URL = process.env.NVIDIA_TTS_URL || `${NVIDIA_BASE_URL}/audio/speech`;
 const NVIDIA_TTS_MODEL = process.env.NVIDIA_TTS_MODEL || 'nvidia/magpie-tts-zeroshot';
+// 'openai'  → { model, input, reference_audio }        (default)
+// 'riva'    → { text, encoding, sample_rate_hz, reference_audio }
+const NVIDIA_TTS_BODY_STYLE = process.env.NVIDIA_TTS_BODY_STYLE || 'openai';
 
 // Strips a data: URL down to raw base64 (accepts bare base64 too).
 function stripDataUrl(s) {
@@ -1003,28 +1051,46 @@ async function nvidiaCloneSpeech({ apiKey, text, referenceAudio, referenceTransc
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60000);
   try {
-    const r = await fetch(`${NVIDIA_BASE_URL}/audio/speech`, {
+    const refB64 = stripDataUrl(referenceAudio);
+    const body = NVIDIA_TTS_BODY_STYLE === 'riva'
+      ? {
+          text: String(text).slice(0, 900),
+          encoding: 'LINEAR_PCM',
+          sample_rate_hz: 44100,
+          reference_audio: refB64,
+          ...(referenceTranscript ? { reference_transcript: String(referenceTranscript).slice(0, 500) } : {}),
+        }
+      : {
+          model: NVIDIA_TTS_MODEL,
+          input: String(text).slice(0, 900),
+          response_format: 'wav',
+          // Zero-shot cloning reference — a few seconds of the target voice.
+          reference_audio: refB64,
+          ...(referenceTranscript ? { reference_transcript: String(referenceTranscript).slice(0, 500) } : {}),
+        };
+
+    const r = await fetch(NVIDIA_TTS_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         Accept: 'audio/wav',
       },
-      body: JSON.stringify({
-        model: NVIDIA_TTS_MODEL,
-        input: String(text).slice(0, 900),
-        response_format: 'wav',
-        // Zero-shot cloning reference — a few seconds of the target voice.
-        reference_audio: stripDataUrl(referenceAudio),
-        ...(referenceTranscript ? { reference_transcript: String(referenceTranscript).slice(0, 500) } : {}),
-      }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
 
     const contentType = r.headers.get('content-type') || '';
     if (!r.ok || contentType.includes('application/json')) {
-      const body = await r.text().catch(() => '');
-      throw new Error(`NVIDIA TTS ${r.status}: ${body.slice(0, 600) || 'no response body'}`);
+      const errBody = await r.text().catch(() => '');
+      if (r.status === 404) {
+        throw new Error(
+          `NVIDIA has no HTTP endpoint at ${NVIDIA_TTS_URL} (404). Riva/Magpie speech models are usually gRPC-only, `
+          + 'which this server cannot call directly. Check your model page on build.nvidia.com for an HTTP endpoint and '
+          + 'set NVIDIA_TTS_URL to it. Using the built-in voice meanwhile.',
+        );
+      }
+      throw new Error(`NVIDIA TTS ${r.status}: ${errBody.slice(0, 600) || 'no response body'}`);
     }
     const buf = Buffer.from(await r.arrayBuffer());
     if (buf.length < 500) throw new Error('NVIDIA TTS returned an unexpectedly small audio file');
@@ -1227,6 +1293,160 @@ app.post('/api/generate-code', requireAuth, async (req, res) => {
   try { code = await inlineAiImages(code); } catch { /* images are best-effort */ }
   code = sanitizeSecretLeaks(code, provider);
   return res.json({ code });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Orchestra build — a team of models, one job each, one boss.        */
+/*                                                                     */
+/*  The earlier objection to splitting one site across several models  */
+/*  was that they'd disagree and produce a broken mash-up. This avoids */
+/*  that by having the BOSS write a shared contract FIRST (sections,   */
+/*  exact class names, palette, fonts), so every worker builds against */
+/*  the same spec instead of inventing its own. Then:                  */
+/*                                                                     */
+/*    1. Boss   → design spec (JSON: sections, class names, palette)   */
+/*    2. Workers→ in PARALLEL, one file each:                          */
+/*                 • index.html  (semantic structure, spec's classes)  */
+/*                 • styles.css  (full stylesheet for those classes)   */
+/*                 • script.js   (interactions, scroll animation)      */
+/*    3. Boss   → reviews all three together, fixes any mismatch       */
+/*                                                                     */
+/*  Every step falls back to the normal chain if its assigned model    */
+/*  fails, so one dead model can't sink the whole build.               */
+/* ------------------------------------------------------------------ */
+const ORCHESTRA_SPEC_PROMPT = [
+  'You are the lead designer of a small web team. Produce the SHARED SPEC the rest of the team will build against.',
+  'Return ONLY minified JSON, no markdown, no prose, matching exactly this shape:',
+  '{"name":"","tagline":"","palette":{"bg":"","surface":"","text":"","muted":"","accent":"","accent2":""},',
+  '"fonts":{"heading":"","body":""},"sections":[{"id":"","className":"","purpose":"","copy":""}],',
+  '"interactions":["..."],"images":[{"className":"","description":""}]}',
+  'Rules: 6-8 sections; every id/className must be unique, lowercase and hyphenated; palette must be real hex colours;',
+  'fonts must be real Google Font names; copy must be REAL specific text for this exact brief (never lorem ipsum);',
+  'images should describe 1-3 photos worth generating. This spec is a binding contract — the other models can only use these names.',
+].join('\n');
+
+function workerPrompt(kind, spec, brief) {
+  const shared = `Brief: ${brief}\n\nSHARED SPEC (binding — use these exact ids/classNames/colours/fonts, invent nothing):\n${spec}`;
+  if (kind === 'html') {
+    return [
+      'You are the markup engineer on a web team. Using the shared spec, write ONLY the semantic HTML BODY content.',
+      'Rules: output raw HTML only — no <html>, <head>, <body>, <style> or <script> tags, no markdown fences.',
+      'Use exactly the section ids and classNames from the spec. Write the real copy from the spec.',
+      'For each spec image use <img class="<its className>" src="ai-img: <its description>" alt="...">.',
+      'Include the real nav/header and footer. No inline styles — styling is someone else\'s job.',
+      '', shared,
+    ].join('\n');
+  }
+  if (kind === 'css') {
+    return [
+      'You are the stylist on a web team. Using the shared spec, write ONLY a complete CSS stylesheet.',
+      'Rules: output raw CSS only — no <style> tags, no markdown fences, no HTML.',
+      'Style exactly the classNames/ids in the spec. Import the spec fonts from Google Fonts at the top with @import.',
+      'Set the font-family on * (or html,body with inheritance) so headings never fall back to a serif default.',
+      'Use the spec palette as CSS custom properties on :root. Include a consistent spacing scale, real hover/focus',
+      'states on every interactive element, reveal-on-scroll classes (.reveal / .reveal.visible), and full mobile',
+      'responsiveness. Aim for an Awwwards-quality look, not a template.',
+      '', shared,
+    ].join('\n');
+  }
+  return [
+    'You are the interaction engineer on a web team. Using the shared spec, write ONLY JavaScript.',
+    'Rules: output raw JS only — no <script> tags, no markdown fences, no HTML/CSS.',
+    'Implement the spec\'s interactions: an IntersectionObserver that adds .visible to .reveal elements on scroll,',
+    'mobile nav toggle if the spec has one, and any tasteful motion the spec lists. Vanilla JS only, no libraries,',
+    'no external requests. Guard every querySelector against null so a missing element can never throw.',
+    '', shared,
+  ].join('\n');
+}
+
+const ORCHESTRA_ASSEMBLE_PROMPT = [
+  'You are the lead engineer doing final assembly. Three teammates each wrote one file against a shared spec.',
+  'Combine them into ONE complete, working HTML document and fix any mismatch between them',
+  '(classNames referenced in CSS/JS that the HTML never emitted, missing wrappers, duplicated ids, etc).',
+  'Rules: return ONLY raw HTML, starting <!DOCTYPE html> and ending </html>. No markdown fences, no commentary.',
+  'Inline the CSS in a single <style> tag in <head> and the JS in a single <script> tag before </body>.',
+  'Keep every ai-img: src exactly as written — the platform replaces those with real images afterwards.',
+  'Keep all the real copy. Improve polish where teammates disagreed, but do not redesign what already works.',
+].join('\n');
+
+app.post('/api/orchestra-build', requireAuth, async (req, res) => {
+  const { prompt, providers, bossIndex } = req.body || {};
+  if (!prompt || !String(prompt).trim()) return res.status(400).json({ error: 'prompt is required' });
+
+  const pool = (Array.isArray(providers) ? providers : []).filter((p) => p && p.model).slice(0, 12);
+  if (pool.length < 2) return res.status(400).json({ error: 'Orchestra mode needs at least 2 models added in Settings → Models' });
+
+  const fallback = defaultChain();
+  const boss = pool[Math.min(Math.max(0, Number(bossIndex) || 0), pool.length - 1)];
+  // Workers cycle through the non-boss models so each gets real work; with
+  // only 2 models total the single worker does all three files.
+  const workers = pool.filter((p) => p !== boss);
+  const pick = (i) => workers.length ? workers[i % workers.length] : boss;
+  const chainFor = (p) => [p, ...fallback];
+  const log = [];
+  const usedBy = {};
+
+  try {
+    // 1. Boss writes the binding spec.
+    const { raw: specRaw, model: specModel } = await callWithFallback(chainFor(boss), ORCHESTRA_SPEC_PROMPT, prompt, { maxTokens: 4000 });
+    const spec = String(specRaw || '').replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+    log.push({ step: 'spec', model: specModel, by: boss.label || boss.model });
+    usedBy.spec = boss.label || boss.model;
+
+    // 2. Workers build their file in parallel.
+    const kinds = ['html', 'css', 'js'];
+    const parts = await Promise.all(kinds.map(async (kind, i) => {
+      const w = pick(i);
+      const clean = (s) => String(s || '').replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/i, '').trim();
+      try {
+        const { raw, model } = await callWithFallback(chainFor(w), workerPrompt(kind, spec, prompt), 'Write the file now.', { maxTokens: 12000 });
+        log.push({ step: kind, model, by: w.label || w.model });
+        usedBy[kind] = w.label || w.model;
+        return clean(raw);
+      } catch (err) {
+        // That teammate is down — the boss covers the shift rather than
+        // letting one dead model sink the whole build.
+        log.push({ step: kind, error: err.message.slice(0, 200), by: w.label || w.model });
+        if (w === boss) return '';
+        try {
+          const { raw, model } = await callWithFallback(chainFor(boss), workerPrompt(kind, spec, prompt), 'Write the file now.', { maxTokens: 12000 });
+          log.push({ step: kind, model, by: `${boss.label || boss.model} (covering)` });
+          usedBy[kind] = `${boss.label || boss.model} (covering)`;
+          return clean(raw);
+        } catch (err2) {
+          log.push({ step: kind, error: `boss cover also failed: ${err2.message.slice(0, 160)}` });
+          return '';
+        }
+      }
+    }));
+    const [html, css, js] = parts;
+    if (!html.trim()) throw new Error('The markup step produced nothing — try again or use a different model as boss.');
+
+    // 3. Boss assembles everything into one document.
+    const assembleInput = `BRIEF:\n${prompt}\n\nSPEC:\n${spec}\n\n--- HTML BODY ---\n${html}\n\n--- CSS ---\n${css}\n\n--- JS ---\n${js}`;
+    const { raw: finalRaw, model: finalModel } = await callWithFallback(chainFor(boss), ORCHESTRA_ASSEMBLE_PROMPT, assembleInput, { maxTokens: 16000 });
+    log.push({ step: 'assemble', model: finalModel, by: boss.label || boss.model });
+    usedBy.assemble = boss.label || boss.model;
+
+    let code = String(finalRaw || '').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/i, '').trim();
+    if (!code || !/<html|<!doctype/i.test(code)) throw new Error('Assembly did not return a complete HTML document');
+    if (!/<\/html>\s*$/i.test(code)) {
+      if (/<script(?![^>]*\/>)[^>]*>(?![\s\S]*<\/script>)/i.test(code)) code += '\n</script>';
+      if (!/<\/body>/i.test(code)) code += '\n</body>';
+      if (!/<\/html>/i.test(code)) code += '\n</html>';
+    }
+    try { code = await inlineAiImages(code); } catch { /* images are best-effort */ }
+    code = sanitizeSecretLeaks(code, boss);
+
+    // Also hand back the individual parts so they show up in the file tree.
+    const files = { 'index.html': code };
+    if (css.trim()) files['styles.css'] = css;
+    if (js.trim()) files['script.js'] = js;
+    res.json({ code, files, log, usedBy });
+  } catch (err) {
+    console.error('orchestra build failed:', err.message);
+    res.status(502).json({ error: err.message.slice(0, 600), log });
+  }
 });
 
 /**
