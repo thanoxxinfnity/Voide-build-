@@ -28,10 +28,6 @@ services:
         sync: false
       - key: TERMINAL_URL
         sync: false
-      - key: CLOUD_BUILD_AGENT_URL
-        sync: false
-      - key: CLOUD_BUILD_SECRET
-        sync: false
       - key: GITHUB_TOKEN
         sync: false
       - key: GITHUB_OWNER
