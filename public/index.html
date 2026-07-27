@@ -963,24 +963,6 @@
     </div>
   </div>
 
-  <!-- ============================================================ -->
-  <!-- ADMIN TERMINAL (owner-only — server verifies before the URL    -->
-  <!-- ever reaches the browser; reachable only via a hidden entry    -->
-  <!-- point, no link/button anywhere in the visible UI)              -->
-  <!-- ============================================================ -->
-  <div id="admin-terminal-modal" class="view-hidden fixed inset-0 z-[70] flex flex-col bg-black">
-    <div class="flex items-center justify-between border-b border-white/10 bg-[#0d1117] px-4 py-2.5">
-      <div class="flex items-center gap-2 text-sm font-medium text-slate-300">
-        <svg class="h-4 w-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg>
-        Admin Terminal
-      </div>
-      <button id="btn-close-admin-terminal" class="btn rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" title="Close">
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-      </button>
-    </div>
-    <iframe id="admin-terminal-iframe" class="flex-1 border-0 bg-black" title="Admin terminal"></iframe>
-  </div>
-
   <!-- Toast container -->
   <div id="toast-root" class="pointer-events-none fixed bottom-5 left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2"></div>
 
@@ -1126,9 +1108,6 @@
     settingsBackdrop: $('#settings-backdrop'),
     modelsList:       $('#models-list'),
     quickModelSelect: $('#quick-model-select'),
-    adminTerminalModal:  $('#admin-terminal-modal'),
-    adminTerminalIframe: $('#admin-terminal-iframe'),
-    btnCloseAdminTerminal: $('#btn-close-admin-terminal'),
     modelForm:        $('#model-form'),
     mfType:           $('#mf-type'),
     mfLabel:          $('#mf-label'),
@@ -3120,33 +3099,6 @@
     pendingAfterAuth = null;
     if (fn) fn();
   }
-
-  /* ---------- Admin terminal (owner-only) ----------
-   * No button/link anywhere in the visible UI — reached only via a hidden
-   * URL hash. The real security boundary is server-side (requireAdmin,
-   * matched against ADMIN_EMAIL): the terminal URL is only ever sent to
-   * the browser after the server confirms the signed-in user is the
-   * configured admin. Everyone else gets a plain 403, no hint given. */
-  async function openAdminTerminal() {
-    if (!state.auth?.user) { gate(() => openAdminTerminal()); return; }
-    try {
-      const res = await fetch('/api/admin/terminal-url', { headers: authHeaders() });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Not authorized');
-      el.adminTerminalIframe.src = data.url;
-      el.adminTerminalModal.classList.remove('view-hidden');
-      document.body.style.overflow = 'hidden';
-    } catch (err) {
-      toast(err.message || 'Not authorized', 'error');
-    } finally {
-      history.replaceState(null, '', location.pathname + location.search); // scrub the hash either way
-    }
-  }
-  function closeAdminTerminal() {
-    el.adminTerminalModal.classList.add('view-hidden');
-    el.adminTerminalIframe.src = 'about:blank';
-    document.body.style.overflow = '';
-  }
   function authErr(msg) {
     el.authError.textContent = msg;
     el.authError.classList.remove('view-hidden');
@@ -4553,7 +4505,6 @@ loop();
   document.querySelectorAll('.stab').forEach((b) => b.addEventListener('click', () => setSettingsTab(b.dataset.stab)));
   // Quick model switcher in the chat panel — mirrors Settings → Models
   el.quickModelSelect.addEventListener('change', () => selectModel(el.quickModelSelect.value || null));
-  el.btnCloseAdminTerminal.addEventListener('click', closeAdminTerminal);
   // Secrets
   $('#btn-add-secret').addEventListener('click', () => {
     if (addSecret(el.sfName.value, el.sfValue.value)) { el.sfName.value = ''; el.sfValue.value = ''; }
@@ -4607,7 +4558,7 @@ loop();
     await startDeploy();
   });
   $('#btn-cancel-token').addEventListener('click', closeModal);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeProjects(); closeSettings(); closeAuth(); closeMailbox(); closeTeamChat(); closeAdminTerminal(); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeProjects(); closeSettings(); closeAuth(); closeMailbox(); closeTeamChat(); } });
 
   // Credits badge — tap to see how many are left / when they refill
   el.planBadge.addEventListener('click', creditsInfo);
@@ -4631,7 +4582,6 @@ loop();
   renderQuickModelSelect();
   refreshMe();
   initFirebaseConfig().then(() => checkGoogleRedirectResult());
-  if (location.hash === '#voide-admin-terminal') openAdminTerminal();
   updateDeployButton();
   setTab('preview');
   el.overlay.classList.add('view-hidden');

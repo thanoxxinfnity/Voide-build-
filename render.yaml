@@ -24,10 +24,6 @@ services:
         sync: false
       - key: BLOB_READ_WRITE_TOKEN
         sync: false
-      - key: ADMIN_EMAIL
-        sync: false
-      - key: TERMINAL_URL
-        sync: false
       - key: GITHUB_TOKEN
         sync: false
       - key: GITHUB_OWNER
