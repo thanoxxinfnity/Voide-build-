@@ -1003,6 +1003,74 @@ async function hfGenerateSpeech(text) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Voice cloning — NVIDIA Magpie TTS (zero-shot).                     */
+/*                                                                     */
+/*  Takes a few seconds of the user's own recorded voice and speaks    */
+/*  arbitrary text back in that voice. Falls back to the Hugging Face  */
+/*  Indic voice above whenever no clone/NVIDIA key is available, so    */
+/*  the Listen buttons keep working either way.                        */
+/*                                                                     */
+/*  NOTE: the exact request/response shape for Magpie on the NIM API   */
+/*  could not be verified from the build environment (outbound calls   */
+/*  to integrate.api.nvidia.com are blocked here), so NVIDIA's own     */
+/*  error body is passed straight through to the caller rather than    */
+/*  being swallowed — if the shape needs adjusting, the real error     */
+/*  says exactly what to change.                                       */
+/* ------------------------------------------------------------------ */
+// Overridable so the cloning path can be pointed at a local mock in tests /
+// at a self-hosted NIM deployment, without touching code.
+const NVIDIA_BASE_URL = process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1';
+const NVIDIA_TTS_MODEL = process.env.NVIDIA_TTS_MODEL || 'nvidia/magpie-tts-zeroshot';
+
+// Strips a data: URL down to raw base64 (accepts bare base64 too).
+function stripDataUrl(s) {
+  const str = String(s || '');
+  const comma = str.indexOf(',');
+  return str.startsWith('data:') && comma > -1 ? str.slice(comma + 1) : str;
+}
+
+async function nvidiaCloneSpeech({ apiKey, text, referenceAudio, referenceTranscript }) {
+  if (!apiKey) throw new Error('No NVIDIA API key — add an NVIDIA NIM model in Settings → Models, or set NVIDIA_API_KEY.');
+  if (!referenceAudio) throw new Error('No reference voice recorded yet.');
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
+  try {
+    const r = await fetch(`${NVIDIA_BASE_URL}/audio/speech`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'audio/wav',
+      },
+      body: JSON.stringify({
+        model: NVIDIA_TTS_MODEL,
+        input: String(text).slice(0, 900),
+        response_format: 'wav',
+        // Zero-shot cloning reference — a few seconds of the target voice.
+        reference_audio: stripDataUrl(referenceAudio),
+        ...(referenceTranscript ? { reference_transcript: String(referenceTranscript).slice(0, 500) } : {}),
+      }),
+      signal: controller.signal,
+    });
+
+    const contentType = r.headers.get('content-type') || '';
+    if (!r.ok || contentType.includes('application/json')) {
+      const body = await r.text().catch(() => '');
+      throw new Error(`NVIDIA TTS ${r.status}: ${body.slice(0, 600) || 'no response body'}`);
+    }
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length < 500) throw new Error('NVIDIA TTS returned an unexpectedly small audio file');
+    return `data:${contentType || 'audio/wav'};base64,${buf.toString('base64')}`;
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('NVIDIA TTS timed out after 60s');
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*  Secret-leak sanitization (defense in depth).                       */
 /*                                                                     */
 /*  Real secret VALUES are never sent to the model in the first place  */
@@ -1211,16 +1279,71 @@ app.post('/api/generate-image', requireAuth, async (req, res) => {
 
 /**
  * POST /api/text-to-speech   (requires Authorization: Bearer <token>)
- * Body: { text } → { audio: <data URL> }
- * Reads text aloud with a real, human-sounding Indian-accent voice
- * (AI4Bharat Indic Parler-TTS) — not a robotic browser voice.
+ * Body: { text, nvidiaKey? } → { audio: <data URL>, voice: 'cloned' | 'default' }
+ * Speaks in the user's OWN cloned voice when they've recorded one (NVIDIA
+ * Magpie zero-shot); otherwise falls back to the built-in Indian-accent
+ * voice, so this never hard-fails just because cloning isn't set up.
  */
 app.post('/api/text-to-speech', requireAuth, async (req, res) => {
-  const { text } = req.body || {};
+  const { text, nvidiaKey } = req.body || {};
   if (!text || !String(text).trim()) return res.status(400).json({ error: 'text is required' });
+
+  const user = store.users[req.auth.email];
+  const clone = user && user.voiceClone;
+  const apiKey = nvidiaKey || process.env.NVIDIA_API_KEY || '';
+
+  if (clone && clone.audio && apiKey) {
+    try {
+      const audio = await nvidiaCloneSpeech({ apiKey, text, referenceAudio: clone.audio, referenceTranscript: clone.transcript });
+      return res.json({ audio, voice: 'cloned' });
+    } catch (err) {
+      // Fall through to the default voice rather than leaving the user with
+      // nothing, but tell them why their clone didn't get used.
+      console.warn('voice clone failed, falling back to default voice:', err.message);
+      const fallback = await hfGenerateSpeech(text);
+      if (fallback) return res.json({ audio: fallback, voice: 'default', cloneError: err.message.slice(0, 400) });
+      return res.status(502).json({ error: err.message.slice(0, 600) });
+    }
+  }
+
   const audio = await hfGenerateSpeech(text);
-  if (!audio) return res.status(501).json({ error: 'Voice needs HF_API_TOKEN configured (ai4bharat/indic-parler-tts)' });
-  res.json({ audio });
+  if (!audio) return res.status(501).json({ error: 'Voice needs HF_API_TOKEN configured (ai4bharat/indic-parler-tts), or record your own voice in Settings → Voice' });
+  res.json({ audio, voice: 'default' });
+});
+
+/**
+ * Voice clone management (requires Authorization: Bearer <token>)
+ *   GET    /api/voice/clone  → { hasClone, transcript?, createdAt? }  (never returns the audio itself)
+ *   POST   /api/voice/clone  { audio: <data URL>, transcript? } → saves the reference sample
+ *   DELETE /api/voice/clone  → removes it
+ * The sample is stored on the user's own account only, and the audio bytes
+ * are never sent back to any client — only used server-side as the cloning
+ * reference.
+ */
+const MAX_VOICE_SAMPLE_BYTES = 1_500_000; // ~1.5MB — plenty for 5-15s of audio
+
+app.get('/api/voice/clone', requireAuth, (req, res) => {
+  const clone = store.users[req.auth.email]?.voiceClone;
+  res.json(clone
+    ? { hasClone: true, transcript: clone.transcript || '', createdAt: clone.createdAt || null }
+    : { hasClone: false });
+});
+
+app.post('/api/voice/clone', requireAuth, (req, res) => {
+  const { audio, transcript } = req.body || {};
+  if (!audio || typeof audio !== 'string') return res.status(400).json({ error: 'audio (data URL) is required' });
+  if (audio.length > MAX_VOICE_SAMPLE_BYTES) return res.status(413).json({ error: 'Voice sample too large — keep it under ~15 seconds' });
+  const user = store.users[req.auth.email];
+  if (!user) return res.status(404).json({ error: 'user not found' });
+  user.voiceClone = { audio, transcript: String(transcript || '').slice(0, 500), createdAt: Date.now() };
+  saveStore();
+  res.json({ hasClone: true, transcript: user.voiceClone.transcript, createdAt: user.voiceClone.createdAt });
+});
+
+app.delete('/api/voice/clone', requireAuth, (req, res) => {
+  const user = store.users[req.auth.email];
+  if (user) { delete user.voiceClone; saveStore(); }
+  res.json({ hasClone: false });
 });
 
 /* ------------------------------------------------------------------ */

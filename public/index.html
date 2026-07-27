@@ -622,6 +622,7 @@
 
       <!-- Tabs -->
       <div class="mb-4 flex gap-1 rounded-xl bg-black/25 p-1 overflow-x-auto">
+        <button data-stab="voice" class="stab btn shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold">🎙️ Voice</button>
         <button data-stab="models" class="stab btn shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold">Models</button>
         <button data-stab="deploy" class="stab btn shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold">Deploy</button>
         <button data-stab="apis" class="stab btn shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold">APIs</button>
@@ -630,8 +631,38 @@
         <button data-stab="prefs" class="stab btn shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold">Prefs</button>
       </div>
 
+      <!-- TAB: Voice (clone your own voice) --------------------------- -->
+      <div id="stab-voice" class="view-hidden">
+        <p class="mb-3 text-sm text-slate-400">Record a few seconds of yourself and every AI reply can be read aloud in <b class="text-white">your own voice</b> (NVIDIA Magpie zero-shot cloning).</p>
+
+        <div id="voice-status" class="mb-3 rounded-xl border border-white/10 bg-black/25 px-3.5 py-3 text-sm text-slate-300">Checking…</div>
+
+        <div class="space-y-3 rounded-2xl border border-white/10 bg-black/25 p-4">
+          <div>
+            <label class="mb-1.5 block text-xs font-medium text-slate-400">Read this sentence out loud while recording</label>
+            <p id="voice-script" class="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm italic text-slate-200">
+              "Hi, this is my voice. I'm building websites with Voide, and this recording is my voice sample."
+            </p>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button id="btn-voice-record" class="btn btn-primary flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+              <span id="voice-record-label">Start recording</span>
+            </button>
+            <button id="btn-voice-upload" class="btn glass rounded-lg px-4 py-2 text-sm font-medium text-slate-200 hover:text-white">Upload audio</button>
+            <input id="voice-file-input" type="file" accept="audio/*" class="hidden" />
+            <button id="btn-voice-test" class="btn glass rounded-lg px-4 py-2 text-sm font-medium text-slate-200 hover:text-white">Test voice</button>
+            <button id="btn-voice-delete" class="btn glass rounded-lg px-4 py-2 text-sm font-medium text-rose-300 hover:bg-rose-500/10">Remove</button>
+          </div>
+
+          <audio id="voice-preview" controls class="view-hidden w-full"></audio>
+          <p class="text-[11px] text-slate-600">Needs an NVIDIA NIM model added under <b>Models</b> (its key is reused), or a server-side <code>NVIDIA_API_KEY</code>. Your sample is stored on your account only and never sent back to any browser.</p>
+        </div>
+      </div>
+
       <!-- TAB: Models ------------------------------------------------ -->
-      <div id="stab-models">
+      <div id="stab-models" class="view-hidden">
         <p class="mb-3 text-sm text-slate-400">Add unlimited models from any company and pick the active one.</p>
         <div id="models-list" class="space-y-2"></div>
 
@@ -664,7 +695,7 @@
           <div>
             <label class="mb-1 block text-xs font-medium text-slate-400">Model ID</label>
             <input id="mf-model" type="text" placeholder="gpt-4o-mini" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
-            <div id="mf-model-suggestions" class="view-hidden mt-1.5 flex flex-wrap gap-1.5"></div>
+            <div id="mf-model-suggestions" class="nice-scroll view-hidden mt-1.5 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-white/5 bg-black/20 p-2"></div>
           </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-slate-400">API Key</label>
@@ -1116,6 +1147,16 @@
     mfEndpointOpt:    $('#mf-endpoint-opt'),
     mfModel:          $('#mf-model'),
     mfModelSuggestions: $('#mf-model-suggestions'),
+    // voice cloning
+    voiceStatus:      $('#voice-status'),
+    voiceScript:      $('#voice-script'),
+    voicePreview:     $('#voice-preview'),
+    voiceFileInput:   $('#voice-file-input'),
+    voiceRecordLabel: $('#voice-record-label'),
+    btnVoiceRecord:   $('#btn-voice-record'),
+    btnVoiceUpload:   $('#btn-voice-upload'),
+    btnVoiceTest:     $('#btn-voice-test'),
+    btnVoiceDelete:   $('#btn-voice-delete'),
     mfKey:            $('#mf-key'),
     secretsList:      $('#secrets-list'),
     sfName:           $('#sf-name'),
@@ -1386,8 +1427,17 @@
     if (!opts || !opts.silent) recordChat('ai', `[image] ${caption || ''}`);
   }
 
-  // ---------- Voice — real Indian-accent TTS (Hugging Face), not a robot ----------
+  // ---------- Voice — the user's OWN cloned voice when they've recorded one
+  // (NVIDIA Magpie zero-shot), otherwise the built-in Indian-accent TTS ----------
   let ttsAudio = null;
+
+  // Reuses the key from any NVIDIA NIM model the user already added, so
+  // cloning doesn't need a second key pasted somewhere else.
+  function nvidiaKeyFromModels() {
+    const m = state.models.find((x) => x.type === 'nvidia' && x.apiKey);
+    return m ? m.apiKey : undefined;
+  }
+
   async function playTTS(text, btn) {
     if (ttsAudio) { ttsAudio.pause(); ttsAudio = null; }
     const label = btn.querySelector('.listen-label');
@@ -1398,12 +1448,13 @@
       const res = await fetch('/api/text-to-speech', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ text: text.slice(0, 900) }),
+        body: JSON.stringify({ text: text.slice(0, 900), nvidiaKey: nvidiaKeyFromModels() }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok || !d.audio) { toast(d.error || 'Voice unavailable — set HF_API_TOKEN', 'error'); return; }
+      if (d.cloneError) toast(`Your cloned voice failed, used the default: ${d.cloneError}`.slice(0, 200), 'error');
       ttsAudio = new Audio(d.audio);
-      label.textContent = 'Playing…';
+      label.textContent = d.voice === 'cloned' ? 'Playing (your voice)…' : 'Playing…';
       ttsAudio.play();
       ttsAudio.onended = () => { label.textContent = original; };
     } catch {
@@ -1411,6 +1462,134 @@
     } finally {
       btn.disabled = false;
       if (label.textContent === 'Loading…') label.textContent = original;
+    }
+  }
+
+  /* ---------- Clone your voice (Settings → Voice) ---------- */
+  let voiceRecorder = null;
+  let voiceChunks = [];
+  let pendingVoiceSample = null; // data URL of a just-recorded/uploaded sample
+
+  function setVoiceStatus(html, tone) {
+    const colors = { ok: 'text-emerald-300', warn: 'text-amber-300', err: 'text-rose-300' };
+    el.voiceStatus.className = `mb-3 rounded-xl border border-white/10 bg-black/25 px-3.5 py-3 text-sm ${colors[tone] || 'text-slate-300'}`;
+    el.voiceStatus.innerHTML = html;
+  }
+
+  async function refreshVoiceStatus() {
+    if (!state.auth?.user) { setVoiceStatus('Sign in to set up voice cloning.', 'warn'); return; }
+    try {
+      const res = await fetch('/api/voice/clone', { headers: authHeaders() });
+      const d = await res.json().catch(() => ({}));
+      if (d.hasClone) {
+        const when = d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '';
+        setVoiceStatus(`✓ Your voice is cloned${when ? ` — saved ${when}` : ''}. AI replies will speak in your voice.`, 'ok');
+      } else {
+        setVoiceStatus('No voice recorded yet — record or upload a sample below.', 'warn');
+      }
+    } catch {
+      setVoiceStatus('Could not check voice status.', 'err');
+    }
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = reject;
+      fr.readAsDataURL(blob);
+    });
+  }
+
+  async function saveVoiceSample(dataUrl) {
+    pendingVoiceSample = dataUrl;
+    el.voicePreview.src = dataUrl;
+    el.voicePreview.classList.remove('view-hidden');
+    setVoiceStatus('Saving your voice sample…');
+    try {
+      const res = await fetch('/api/voice/clone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ audio: dataUrl, transcript: el.voiceScript ? el.voiceScript.textContent.trim() : '' }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || 'Could not save the sample');
+      toast('Voice saved — AI replies will now use your voice 🎙️', 'success');
+      refreshVoiceStatus();
+    } catch (err) {
+      setVoiceStatus(err.message, 'err');
+      toast(err.message, 'error');
+    }
+  }
+
+  async function toggleVoiceRecording() {
+    // Stop an in-progress recording.
+    if (voiceRecorder && voiceRecorder.state === 'recording') {
+      voiceRecorder.stop();
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      toast('This browser can\'t record audio — use "Upload audio" instead', 'error');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      voiceChunks = [];
+      voiceRecorder = new MediaRecorder(stream);
+      voiceRecorder.ondataavailable = (e) => { if (e.data.size) voiceChunks.push(e.data); };
+      voiceRecorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        el.voiceRecordLabel.textContent = 'Start recording';
+        el.btnVoiceRecord.classList.remove('animate-pulse');
+        const blob = new Blob(voiceChunks, { type: voiceRecorder.mimeType || 'audio/webm' });
+        if (blob.size < 2000) { toast('That recording was too short — try 5-10 seconds', 'error'); return; }
+        await saveVoiceSample(await blobToDataUrl(blob));
+      };
+      voiceRecorder.start();
+      el.voiceRecordLabel.textContent = 'Stop recording';
+      el.btnVoiceRecord.classList.add('animate-pulse');
+      setVoiceStatus('Recording… read the sentence below, then press Stop.', 'warn');
+    } catch (err) {
+      toast('Microphone access denied or unavailable', 'error');
+    }
+  }
+
+  async function testClonedVoice() {
+    el.btnVoiceTest.disabled = true;
+    const original = el.btnVoiceTest.textContent;
+    el.btnVoiceTest.textContent = 'Testing…';
+    try {
+      const res = await fetch('/api/text-to-speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ text: 'Hey! This is how I sound inside Voide. Tell me what you want to build.', nvidiaKey: nvidiaKeyFromModels() }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.audio) throw new Error(d.error || 'Voice test failed');
+      el.voicePreview.src = d.audio;
+      el.voicePreview.classList.remove('view-hidden');
+      el.voicePreview.play();
+      if (d.voice === 'cloned') setVoiceStatus('✓ Playing in your cloned voice.', 'ok');
+      else setVoiceStatus(`Played with the default voice${d.cloneError ? ` — clone failed: ${d.cloneError}` : ' (no clone in use).'}`, 'warn');
+    } catch (err) {
+      setVoiceStatus(err.message, 'err');
+      toast(err.message.slice(0, 200), 'error');
+    } finally {
+      el.btnVoiceTest.disabled = false;
+      el.btnVoiceTest.textContent = original;
+    }
+  }
+
+  async function deleteVoiceClone() {
+    try {
+      await fetch('/api/voice/clone', { method: 'DELETE', headers: authHeaders() });
+      pendingVoiceSample = null;
+      el.voicePreview.classList.add('view-hidden');
+      el.voicePreview.src = '';
+      toast('Voice sample removed');
+      refreshVoiceStatus();
+    } catch {
+      toast('Could not remove the sample', 'error');
     }
   }
 
@@ -2745,22 +2924,58 @@
   // one-click suggestions — NVIDIA's full catalog is larger than this and
   // changes over time, so the field stays freely editable; copy any exact
   // id straight from your own build.nvidia.com model page if it's not here.
-  const NVIDIA_MODEL_SUGGESTIONS = [
-    'qwen/qwen2.5-coder-32b-instruct',
-    'deepseek-ai/deepseek-r1',
-    'deepseek-ai/deepseek-r1-distill-llama-70b',
-    'meta/llama-3.3-70b-instruct',
-    'meta/llama-3.1-405b-instruct',
-    'meta/llama-3.1-70b-instruct',
-    'meta/llama-3.1-8b-instruct',
-    'nvidia/llama-3.1-nemotron-70b-instruct',
-    'mistralai/mixtral-8x22b-instruct-v0.1',
-    'mistralai/mistral-large',
-    'qwen/qwen2.5-72b-instruct',
-    'microsoft/phi-3-medium-4k-instruct',
-    'google/gemma-2-27b-it',
-    'ibm/granite-34b-code-instruct',
-    '01-ai/yi-large',
+  // Grouped so a long list stays browsable. "Verified" here just means the
+  // id matches a model known to exist on NVIDIA's catalog; the rest are
+  // included because they were requested, but may 404 if NVIDIA doesn't
+  // publish them under that exact id — the field is editable either way,
+  // so paste the exact id from your own build.nvidia.com page if one fails.
+  const NVIDIA_MODEL_GROUPS = [
+    { label: 'Coding', ids: [
+      'qwen/qwen2.5-coder-32b-instruct',
+      'mistralai/codestral-22b',
+      'meta/codellama-70b-instruct',
+      'ibm/granite-34b-code-instruct',
+      'qwen/qwen3-coder-next',
+      'qwen/qwen3-coder-30b',
+      'kimi/kimi-k2.7-code',
+      'deepseek-ai/deepseek-v4-flash',
+    ] },
+    { label: 'Reasoning & agents', ids: [
+      'deepseek-ai/deepseek-r1',
+      'deepseek-ai/deepseek-r1-distill-llama-70b',
+      'deepseek-ai/deepseek-v4-pro',
+      'nvidia/llama-3.1-nemotron-70b-instruct',
+      'nvidia/nemotron-3-ultra-550b-a55b',
+      'z-ai/glm-5.2',
+      'kimi/kimi-k3',
+      'kimi/kimi-k2.6',
+      'minimax/minimax-m3',
+      'minimax/minimax-m2.7',
+      'poolside/laguna-xs-2.1',
+      'thinkingmachines/inkling',
+    ] },
+    { label: 'Large general', ids: [
+      'meta/llama-3.1-405b-instruct',
+      'meta/llama-3.3-70b-instruct',
+      'meta/llama-3.1-70b-instruct',
+      'meta/llama-3.1-8b-instruct',
+      'qwen/qwen2.5-72b-instruct',
+      'qwen/qwen3.6-plus',
+      'microsoft/phi-3-medium-4k-instruct',
+      'microsoft/phi-3.5-moe-instruct',
+      'google/gemma-2-27b-it',
+      'google/gemma-4-31b-it',
+      '01-ai/yi-large',
+    ] },
+    { label: 'Chat & multilingual', ids: [
+      'mistralai/mixtral-8x22b-instruct-v0.1',
+      'mistralai/mistral-large',
+      'mistralai/mistral-large-2',
+      'mistralai/mistral-medium-3.5-128b',
+      'community/gpt-oss-120B',
+      'community/gpt-oss-20b',
+      'sarvam/sarvam-m',
+    ] },
   ];
 
   // Adjust the form fields to the selected provider.
@@ -2772,13 +2987,19 @@
     el.mfModelSuggestions.innerHTML = '';
     if (type === 'nvidia') {
       el.mfModelSuggestions.classList.remove('view-hidden');
-      NVIDIA_MODEL_SUGGESTIONS.forEach((id) => {
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.className = 'chip btn rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white';
-        chip.textContent = id;
-        chip.addEventListener('click', () => { el.mfModel.value = id; });
-        el.mfModelSuggestions.appendChild(chip);
+      NVIDIA_MODEL_GROUPS.forEach((group) => {
+        const heading = document.createElement('div');
+        heading.className = 'w-full pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600';
+        heading.textContent = group.label;
+        el.mfModelSuggestions.appendChild(heading);
+        group.ids.forEach((id) => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'chip btn rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white';
+          chip.textContent = id;
+          chip.addEventListener('click', () => { el.mfModel.value = id; });
+          el.mfModelSuggestions.appendChild(chip);
+        });
       });
     } else {
       el.mfModelSuggestions.classList.add('view-hidden');
@@ -2951,7 +3172,7 @@
   }
 
   function setSettingsTab(tab) {
-    ['models', 'deploy', 'apis', 'secrets', 'team', 'prefs'].forEach((t) => {
+    ['voice', 'models', 'deploy', 'apis', 'secrets', 'team', 'prefs'].forEach((t) => {
       $('#stab-' + t).classList.toggle('view-hidden', t !== tab);
     });
     document.querySelectorAll('.stab').forEach((b) => {
@@ -2980,6 +3201,7 @@
     setSettingsTab(tab || 'models');
     el.settingsModal.classList.remove('view-hidden');
     document.body.style.overflow = 'hidden';
+    refreshVoiceStatus();
     el.teamsList.innerHTML = '<p class="py-4 text-center text-sm text-slate-500">Loading your teams…</p>';
     await fetchTeams();
     renderTeams();
@@ -4505,6 +4727,18 @@ loop();
   document.querySelectorAll('.stab').forEach((b) => b.addEventListener('click', () => setSettingsTab(b.dataset.stab)));
   // Quick model switcher in the chat panel — mirrors Settings → Models
   el.quickModelSelect.addEventListener('change', () => selectModel(el.quickModelSelect.value || null));
+  // Voice cloning
+  el.btnVoiceRecord.addEventListener('click', toggleVoiceRecording);
+  el.btnVoiceUpload.addEventListener('click', () => el.voiceFileInput.click());
+  el.voiceFileInput.addEventListener('change', async () => {
+    const f = el.voiceFileInput.files?.[0];
+    el.voiceFileInput.value = '';
+    if (!f) return;
+    if (f.size > 1_400_000) { toast('That file is too big — use a clip under ~15 seconds', 'error'); return; }
+    await saveVoiceSample(await blobToDataUrl(f));
+  });
+  el.btnVoiceTest.addEventListener('click', testClonedVoice);
+  el.btnVoiceDelete.addEventListener('click', deleteVoiceClone);
   // Secrets
   $('#btn-add-secret').addEventListener('click', () => {
     if (addSecret(el.sfName.value, el.sfValue.value)) { el.sfName.value = ''; el.sfValue.value = ''; }
