@@ -72,6 +72,18 @@
       box-shadow: 0 0 0 4px rgba(99,102,241,.14), 0 20px 60px -20px rgba(99,102,241,.35);
     }
 
+    /* ---------- Tilt / motion parallax ----------
+       Layers drift with device tilt (phone) or pointer position (desktop),
+       so the hero reads as depth-stacked panes floating above the page.
+       Transform only — never touches layout, so it can't cause reflow or
+       break scrolling. */
+    .tilt-layer { will-change: transform; transition: transform .35s cubic-bezier(.16,1,.3,1); }
+    /* Respect the OS "reduce motion" setting — no drift at all for users
+       who've asked for less animation (it can trigger motion sickness). */
+    @media (prefers-reduced-motion: reduce) {
+      .tilt-layer { transform: none !important; transition: none; }
+    }
+
     /* ---------- Mobile scrolling fixes ---------- */
     /* Real viewport height on phones (URL bar collapse breaks 100vh) */
     @supports (height: 100dvh) {
@@ -288,13 +300,13 @@
   <main id="view-hero" class="relative flex h-[calc(100vh-4rem)] flex-col items-center overflow-y-auto nice-scroll px-4">
     <div class="hero-grid pointer-events-none absolute inset-0"></div>
 
-    <!-- Ambient orbs -->
-    <div class="pointer-events-none absolute left-[12%] top-[18%] h-56 w-56 rounded-full bg-brand-500/20 blur-[100px] animate-float-slow"></div>
-    <div class="pointer-events-none absolute right-[10%] top-[42%] h-64 w-64 rounded-full bg-accent-500/15 blur-[110px] animate-float-slow" style="animation-delay:-4s"></div>
+    <!-- Ambient orbs (deepest parallax layer — moves most as you tilt) -->
+    <div class="tilt-layer pointer-events-none absolute left-[12%] top-[18%] h-56 w-56 rounded-full bg-brand-500/20 blur-[100px] animate-float-slow" data-depth="2.4"></div>
+    <div class="tilt-layer pointer-events-none absolute right-[10%] top-[42%] h-64 w-64 rounded-full bg-accent-500/15 blur-[110px] animate-float-slow" data-depth="3.1"></div>
 
     <div class="relative z-10 mx-auto flex w-full max-w-3xl flex-col items-center pt-14 pb-16 sm:pt-20">
       <!-- Eyebrow pill -->
-      <div class="glass animate-fade-up flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300">
+      <div class="tilt-layer glass animate-fade-up flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium text-slate-300" data-depth="1.4">
         <span class="relative flex h-2 w-2">
           <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60"></span>
           <span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
@@ -303,11 +315,11 @@
       </div>
 
       <!-- Headline -->
-      <h1 id="hero-headline" class="animate-fade-up mt-7 text-center text-4xl font-extrabold tracking-tight sm:text-6xl" style="animation-delay:.08s">
+      <h1 id="hero-headline" class="tilt-layer animate-fade-up mt-7 text-center text-4xl font-extrabold tracking-tight sm:text-6xl" data-depth="1" style="animation-delay:.08s">
         <span class="text-white">Build Full Websites</span><br />
         <span class="grad-text">with One Prompt</span>
       </h1>
-      <p id="hero-sub" class="animate-fade-up mt-5 max-w-xl text-center text-base leading-relaxed text-slate-400 sm:text-lg" style="animation-delay:.16s">
+      <p id="hero-sub" class="tilt-layer animate-fade-up mt-5 max-w-xl text-center text-base leading-relaxed text-slate-400 sm:text-lg" data-depth="0.65" style="animation-delay:.16s">
         Describe your idea. Our AI engine designs, codes and previews a complete,
         production-ready website in seconds — then deploys it live with one click.
       </p>
@@ -335,12 +347,14 @@
           <!-- Attached files -->
           <div id="attach-row" class="flex flex-wrap gap-2 px-2 empty:hidden"></div>
           <div class="flex items-center justify-between gap-3 px-2 pb-1 pt-1">
-            <div class="flex items-center gap-1.5">
+            <div class="flex min-w-0 items-center gap-1.5">
               <input id="file-input" type="file" multiple class="hidden" accept="image/*,.glb,.gltf,.obj,.json,.svg,.mp4,.webm,.zip" />
-              <button id="btn-attach" class="btn glass flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-slate-300 hover:text-white" title="Attach images, 3D models or assets">
+              <button id="btn-attach" class="btn glass flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-slate-300 hover:text-white" title="Attach images, 3D models or assets">
                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                 Attach
               </button>
+              <!-- Model picker, right in the prompt box (like Gemini / Claude) -->
+              <select id="hero-model-select" class="min-w-0 max-w-[190px] truncate rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[12px] font-medium text-slate-300 outline-none hover:text-white focus:border-brand-400/60" title="Which AI model to build with"></select>
             </div>
             <button id="btn-generate" class="btn btn-primary flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white">
               <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m13 2-2 9h5l-3 11 8-13h-6l3-7z"/></svg>
@@ -1139,6 +1153,7 @@
     settingsBackdrop: $('#settings-backdrop'),
     modelsList:       $('#models-list'),
     quickModelSelect: $('#quick-model-select'),
+    heroModelSelect:  $('#hero-model-select'),
     modelForm:        $('#model-form'),
     mfType:           $('#mf-type'),
     mfLabel:          $('#mf-label'),
@@ -3146,29 +3161,47 @@
     });
   }
 
-  // Compact <select> in the chat panel — same choices as Settings → Models,
-  // but reachable without opening the modal.
+  // Model pickers — one right in the hero prompt box (like Gemini/Claude,
+  // visible before you've typed anything) and one in the Build Console
+  // header. Both show the same choices as Settings → Models and stay in
+  // sync with each other.
   function renderQuickModelSelect() {
-    const sel = el.quickModelSelect;
-    const prevValue = state.activeModelId || '';
-    sel.innerHTML = '';
-    const optDefault = document.createElement('option');
-    optDefault.value = '';
-    optDefault.textContent = '🌐 Server default (auto)';
-    sel.appendChild(optDefault);
-    if (state.models.length > 1) {
-      const optAll = document.createElement('option');
-      optAll.value = ALL_MODELS_ID;
-      optAll.textContent = `⚡ All Models (${state.models.length})`;
-      sel.appendChild(optAll);
-    }
-    state.models.forEach((m) => {
-      const opt = document.createElement('option');
-      opt.value = m.id;
-      opt.textContent = `${m.label} · ${PROVIDER_NAMES[m.type] || 'OpenAI'}`;
-      sel.appendChild(opt);
+    [el.heroModelSelect, el.quickModelSelect].forEach((sel) => {
+      if (!sel) return;
+      const prevValue = state.activeModelId || '';
+      sel.innerHTML = '';
+      const optDefault = document.createElement('option');
+      optDefault.value = '';
+      optDefault.textContent = '🌐 Server default (auto)';
+      sel.appendChild(optDefault);
+      if (state.models.length > 1) {
+        const optAll = document.createElement('option');
+        optAll.value = ALL_MODELS_ID;
+        optAll.textContent = `⚡ All Models (${state.models.length})`;
+        sel.appendChild(optAll);
+      }
+      state.models.forEach((m) => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = `${m.label} · ${PROVIDER_NAMES[m.type] || 'OpenAI'}`;
+        sel.appendChild(opt);
+      });
+      // "+ Add a model…" so the picker is also the way in to adding one.
+      const optAdd = document.createElement('option');
+      optAdd.value = '__add__';
+      optAdd.textContent = '＋ Add a model…';
+      sel.appendChild(optAdd);
+      sel.value = prevValue;
     });
-    sel.value = prevValue;
+  }
+
+  function onModelPickerChange(sel) {
+    if (sel.value === '__add__') {
+      sel.value = state.activeModelId || '';
+      gate(() => { openSettings('models'); showModelForm(null); });
+      return;
+    }
+    selectModel(sel.value || null);
   }
 
   function setSettingsTab(tab) {
@@ -3388,16 +3421,18 @@
   }
 
   /* ---------- Google / Firebase sign-in ----------
-   * Uses signInWithRedirect, not signInWithPopup. Firebase's popup flow
-   * depends on postMessage between the popup and this window, which modern
-   * Chrome's default Cross-Origin-Opener-Policy frequently breaks silently
-   * — the popup opens, the user picks an account, and the promise on this
-   * side never resolves or rejects (no error, nothing happens). Popups are
-   * also unreliable in mobile/embedded browsers generally. Redirect avoids
-   * all of that: a full-page navigation to Google and back, picked up by
-   * getRedirectResult() on load — the same approach Firebase recommends
-   * for broad compatibility. */
-  const fb = { cfg: null, auth: null, provider: null, signInWithRedirect: null, getRedirectResult: null };
+   * Neither Firebase flow is reliable everywhere on its own:
+   *   - signInWithPopup can hang silently when the browser's Cross-Origin-
+   *     Opener-Policy severs the popup↔opener postMessage channel (popup
+   *     opens, user picks an account, promise never settles).
+   *   - signInWithRedirect breaks when third-party cookies/storage are
+   *     blocked, which is increasingly the default — the round trip
+   *     completes but getRedirectResult() comes back empty.
+   * So: try popup first with a hard timeout, and if it hangs, is blocked,
+   * or errors in a way redirect can rescue, fall back to redirect. Whatever
+   * happens the user gets a real message instead of a dead button. */
+  const fb = { cfg: null, auth: null, provider: null, signInWithPopup: null, signInWithRedirect: null, getRedirectResult: null };
+  const POPUP_TIMEOUT_MS = 90000; // generous — the user may take a while picking an account
 
   // Ask the server whether Firebase is configured; if so, reveal the button.
   async function initFirebaseConfig() {
@@ -3421,6 +3456,7 @@
     const app = appMod.initializeApp(fb.cfg);
     fb.auth = authMod.getAuth(app);
     fb.provider = new authMod.GoogleAuthProvider();
+    fb.signInWithPopup = authMod.signInWithPopup;
     fb.signInWithRedirect = authMod.signInWithRedirect;
     fb.getRedirectResult = authMod.getRedirectResult;
   }
@@ -3451,9 +3487,41 @@
     btn.disabled = true;
     try {
       await ensureFirebase();
-      await fb.signInWithRedirect(fb.auth, fb.provider); // navigates away — nothing after this runs
+      // Remember that we started, so if the page reloads via redirect we
+      // know to surface an error if it comes back with nothing.
+      sessionStorage.setItem('aws_google_pending', '1');
+
+      let timedOut = false;
+      const cred = await Promise.race([
+        fb.signInWithPopup(fb.auth, fb.provider),
+        new Promise((resolve) => setTimeout(() => { timedOut = true; resolve(null); }, POPUP_TIMEOUT_MS)),
+      ]).catch((err) => { throw err; });
+
+      if (timedOut || !cred) {
+        // Popup never came back (COOP severed the channel, or it was
+        // swallowed) — hand off to a full-page redirect instead.
+        authErr('Popup didn\'t respond — switching to redirect sign-in…');
+        await fb.signInWithRedirect(fb.auth, fb.provider);
+        return; // navigates away
+      }
+      sessionStorage.removeItem('aws_google_pending');
+      await completeGoogleSignIn(cred);
     } catch (err) {
-      authErr(err.message || 'Google sign-in failed');
+      const code = err && err.code ? String(err.code) : '';
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        sessionStorage.removeItem('aws_google_pending');
+        authErr('Sign-in cancelled');
+      } else if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
+        // Popups disabled in this browser — redirect is the only option.
+        try { await fb.signInWithRedirect(fb.auth, fb.provider); return; }
+        catch (e2) { authErr(e2.message || 'Google sign-in failed'); }
+      } else if (code === 'auth/unauthorized-domain') {
+        authErr(`This domain isn't authorized in Firebase. Add "${location.hostname}" under Authentication → Settings → Authorized domains.`);
+      } else {
+        authErr((err && err.message) || 'Google sign-in failed');
+      }
+      sessionStorage.removeItem('aws_google_pending');
+    } finally {
       btn.disabled = false;
     }
   }
@@ -3462,12 +3530,28 @@
   // redirect and finish signing in if so.
   async function checkGoogleRedirectResult() {
     if (!fb.cfg) return;
+    const wasPending = sessionStorage.getItem('aws_google_pending') === '1';
     try {
       await ensureFirebase();
       const cred = await fb.getRedirectResult(fb.auth);
-      if (cred) await completeGoogleSignIn(cred);
+      sessionStorage.removeItem('aws_google_pending');
+      if (cred) { await completeGoogleSignIn(cred); return; }
+      // Came back from Google but Firebase has no credential — almost always
+      // blocked third-party cookies/storage. Say so instead of failing mute.
+      if (wasPending) {
+        openAuth('signin');
+        authErr('Google sent you back but the browser blocked the sign-in storage. Try allowing third-party cookies for this site, or use email + password.');
+      }
     } catch (err) {
-      authErr(err.message || 'Google sign-in failed');
+      sessionStorage.removeItem('aws_google_pending');
+      const code = err && err.code ? String(err.code) : '';
+      if (code === 'auth/unauthorized-domain') {
+        openAuth('signin');
+        authErr(`This domain isn't authorized in Firebase. Add "${location.hostname}" under Authentication → Settings → Authorized domains.`);
+      } else if (wasPending) {
+        openAuth('signin');
+        authErr((err && err.message) || 'Google sign-in failed');
+      }
     }
   }
 
@@ -4726,7 +4810,8 @@ loop();
   el.mfType.addEventListener('change', () => configureModelForm(el.mfType.value));
   document.querySelectorAll('.stab').forEach((b) => b.addEventListener('click', () => setSettingsTab(b.dataset.stab)));
   // Quick model switcher in the chat panel — mirrors Settings → Models
-  el.quickModelSelect.addEventListener('change', () => selectModel(el.quickModelSelect.value || null));
+  el.quickModelSelect.addEventListener('change', () => onModelPickerChange(el.quickModelSelect));
+  el.heroModelSelect.addEventListener('change', () => onModelPickerChange(el.heroModelSelect));
   // Voice cloning
   el.btnVoiceRecord.addEventListener('click', toggleVoiceRecording);
   el.btnVoiceUpload.addEventListener('click', () => el.voiceFileInput.click());
@@ -4809,6 +4894,80 @@ loop();
     }
   });
 
+  /* ============================================================
+   *  MOTION PARALLAX — hero layers float/hang in 3D.
+   *  Phone: real gyroscope tilt (DeviceOrientation). Desktop: pointer
+   *  position stands in for tilt. Purely visual; transform-only so it
+   *  can never affect layout or scrolling, and fully disabled when the
+   *  OS asks for reduced motion.
+   * ============================================================ */
+  const tilt = { x: 0, y: 0, tx: 0, ty: 0, raf: 0, layers: [] };
+  const REDUCED_MOTION = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+  function tiltFrame() {
+    // Ease toward the target so movement feels weighted, not twitchy.
+    tilt.x += (tilt.tx - tilt.x) * 0.08;
+    tilt.y += (tilt.ty - tilt.y) * 0.08;
+    for (const layer of tilt.layers) {
+      const d = parseFloat(layer.dataset.depth || '1');
+      layer.style.transform = `translate3d(${(tilt.x * d).toFixed(2)}px, ${(tilt.y * d).toFixed(2)}px, 0)`;
+    }
+    // Keep animating only while there's still meaningful movement left.
+    if (Math.abs(tilt.tx - tilt.x) > 0.05 || Math.abs(tilt.ty - tilt.y) > 0.05) {
+      tilt.raf = requestAnimationFrame(tiltFrame);
+    } else {
+      tilt.raf = 0;
+    }
+  }
+  function nudgeTilt(tx, ty) {
+    const CAP = 26; // px of drift at depth 1 — enough to feel, not enough to distract
+    tilt.tx = Math.max(-CAP, Math.min(CAP, tx));
+    tilt.ty = Math.max(-CAP, Math.min(CAP, ty));
+    if (!tilt.raf) tilt.raf = requestAnimationFrame(tiltFrame);
+  }
+
+  function initMotionParallax() {
+    if (REDUCED_MOTION) return;
+    tilt.layers = Array.from(document.querySelectorAll('.tilt-layer'));
+    if (!tilt.layers.length) return;
+
+    // Desktop / anything with a pointer: track the cursor.
+    if (window.matchMedia?.('(pointer: fine)').matches) {
+      window.addEventListener('mousemove', (e) => {
+        nudgeTilt(
+          (e.clientX / window.innerWidth - 0.5) * -34,
+          (e.clientY / window.innerHeight - 0.5) * -22,
+        );
+      }, { passive: true });
+    }
+
+    // Phone: real device tilt. gamma = left/right, beta = front/back.
+    const onOrient = (e) => {
+      if (e.gamma == null && e.beta == null) return;
+      const portrait = Math.abs(window.orientation || 0) !== 90;
+      const g = e.gamma || 0, b = e.beta || 0;
+      const lr = portrait ? g : b;
+      const fb = portrait ? b : -g;
+      nudgeTilt(lr * -1.1, (fb - 45) * -0.5); // -45 so a natural holding angle sits at rest
+    };
+
+    // iOS 13+ requires an explicit permission prompt, and it must be
+    // triggered by a user gesture — so ask on the first tap rather than
+    // on load (where it would be rejected outright).
+    const DOE = window.DeviceOrientationEvent;
+    if (DOE && typeof DOE.requestPermission === 'function') {
+      const askOnce = async () => {
+        document.removeEventListener('click', askOnce);
+        try {
+          if (await DOE.requestPermission() === 'granted') window.addEventListener('deviceorientation', onOrient, { passive: true });
+        } catch { /* denied — the pointer fallback above still applies */ }
+      };
+      document.addEventListener('click', askOnce, { once: true });
+    } else if (DOE) {
+      window.addEventListener('deviceorientation', onOrient, { passive: true });
+    }
+  }
+
   // ---------- Init ----------
   setBuildMode('website');
   initCredits();
@@ -4816,6 +4975,7 @@ loop();
   renderQuickModelSelect();
   refreshMe();
   initFirebaseConfig().then(() => checkGoogleRedirectResult());
+  initMotionParallax();
   updateDeployButton();
   setTab('preview');
   el.overlay.classList.add('view-hidden');

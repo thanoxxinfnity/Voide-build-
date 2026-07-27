@@ -26,7 +26,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
 const { WebSocketServer } = require('ws');
-const { Pool } = require('pg');
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -36,41 +36,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 /* ------------------------------------------------------------------ */
 /*  Authentication — email + password, hashed, signed tokens          */
-/*                                                                     */
-/*  Persistence: with DATABASE_URL set (Postgres — e.g. a free         */
-/*  Supabase project), all user/team/project data survives redeploys   */
-/*  by living in a real database instead of the container's local      */
-/*  disk. Render's free web services do NOT keep local files across    */
-/*  a redeploy/restart — data/users.json would otherwise be wiped on   */
-/*  every single deploy. Without DATABASE_URL, the app falls back to   */
-/*  the original local-file behavior so nothing breaks for anyone who  */
-/*  hasn't set up a database yet.                                      */
+/*  Users persist to data/users.json.                                  */
 /* ------------------------------------------------------------------ */
 const DATA_DIR = path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 let store = { secret: null, users: {} };
 let storeWritable = true;
 
-const DATABASE_URL = process.env.DATABASE_URL || '';
-const pgPool = DATABASE_URL
-  ? new Pool({ connectionString: DATABASE_URL, ssl: DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false } })
-  : null;
-
-async function ensureStoreTable() {
-  await pgPool.query('CREATE TABLE IF NOT EXISTS app_state (id INT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ DEFAULT now())');
-}
-
-// Fire-and-forget: the in-memory `store` is already the source of truth for
-// this running process (every mutation happens on it directly before this
-// is called), so callers never need to await a save — it only needs to land
-// before the NEXT restart, not before the current response.
 function saveStore() {
-  if (pgPool) {
-    return pgPool.query(
-      'INSERT INTO app_state (id, data, updated_at) VALUES (1, $1, now()) ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = now()',
-      [JSON.stringify(store)],
-    ).catch((err) => console.error('saveStore (postgres) failed:', err.message));
-  }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(USERS_FILE, JSON.stringify(store));
@@ -81,13 +54,7 @@ function saveStore() {
 }
 
 async function loadStore() {
-  if (pgPool) {
-    await ensureStoreTable();
-    const { rows } = await pgPool.query('SELECT data FROM app_state WHERE id = 1');
-    store = rows[0] ? rows[0].data : {};
-  } else {
-    try { store = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')); } catch { /* fresh store */ }
-  }
+  try { store = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')); } catch { /* fresh store */ }
   if (!store.users) store.users = {};
   if (!store.teams) store.teams = {};
   if (!store.projects) store.projects = {};
@@ -1630,7 +1597,7 @@ server.listen(PORT, () => {
   console.log(`  Image storage   : ${vercelBlobPut ? 'Vercel Blob (real hosted URLs)' : 'inline base64 (set BLOB_READ_WRITE_TOKEN for hosted URLs)'}`);
   console.log(`  Deploy          : ${process.env.VERCEL_TOKEN ? 'Vercel (live)' : 'demo URL (no VERCEL_TOKEN)'}`);
   console.log(`  GitHub mirror   : ${process.env.GITHUB_TOKEN && process.env.GITHUB_OWNER ? 'on' : 'off'}`);
-  console.log(`  Auth storage    : ${pgPool ? 'Postgres (persists across redeploys)' : storeWritable ? 'local file (⚠ wiped on redeploy on most cloud hosts — set DATABASE_URL to fix)' : 'in-memory (disk not writable)'}`);
+  console.log(`  Auth storage    : ${storeWritable ? 'file store (data/users.json)' : 'in-memory (disk not writable)'}`);
   console.log(`  Google sign-in  : ${process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_API_KEY ? `on (project ${process.env.FIREBASE_PROJECT_ID})` : 'off (set FIREBASE_PROJECT_ID + FIREBASE_API_KEY)'}`);
   console.log(`  Live collab     : ws://localhost:${PORT}/ws`);
 });

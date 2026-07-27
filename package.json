@@ -13,7 +13,6 @@
   "dependencies": {
     "@vercel/blob": "^2.6.1",
     "express": "^4.22.2",
-    "pg": "^8.22.0",
     "ws": "^8.21.1"
   },
   "license": "UNLICENSED",
