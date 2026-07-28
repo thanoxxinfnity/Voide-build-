@@ -633,6 +633,7 @@ const DEFAULT_ENDPOINTS = {
   openrouter: 'https://openrouter.ai/api/v1',
   anthropic:  'https://api.anthropic.com/v1/messages',
   gemini:     'https://generativelanguage.googleapis.com/v1beta',
+  nvidia:     'https://integrate.api.nvidia.com/v1',
 };
 function normalizeProviderCfg(cfg) {
   const type = cfg.type || 'openai';
