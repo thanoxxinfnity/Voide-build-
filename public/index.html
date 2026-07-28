@@ -709,7 +709,10 @@
           <div>
             <label class="mb-1 block text-xs font-medium text-slate-400">Model ID</label>
             <input id="mf-model" type="text" placeholder="gpt-4o-mini" class="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
-            <div id="mf-model-suggestions" class="nice-scroll view-hidden mt-1.5 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-white/5 bg-black/20 p-2"></div>
+            <div id="mf-model-suggestions" class="view-hidden mt-1.5">
+              <input id="mf-nim-search" type="text" placeholder="Search by name, ID or category…" class="mb-1.5 w-full rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-xs text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+              <div id="mf-nim-list" class="nice-scroll max-h-52 overflow-y-auto rounded-lg border border-white/5 bg-black/20"></div>
+            </div>
           </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-slate-400">API Key</label>
@@ -1162,6 +1165,8 @@
     mfEndpointOpt:    $('#mf-endpoint-opt'),
     mfModel:          $('#mf-model'),
     mfModelSuggestions: $('#mf-model-suggestions'),
+    nimSearch:          $('#mf-nim-search'),
+    nimList:            $('#mf-nim-list'),
     // voice cloning
     voiceStatus:      $('#voice-status'),
     voiceScript:      $('#voice-script'),
@@ -2971,63 +2976,85 @@
     custom:     { model: 'model-id',                   endpoint: 'https://your-host/v1',                         optional: false },
   };
 
-  // Well-known NVIDIA NIM catalog model ids (build.nvidia.com) offered as
-  // one-click suggestions — NVIDIA's full catalog is larger than this and
-  // changes over time, so the field stays freely editable; copy any exact
-  // id straight from your own build.nvidia.com model page if it's not here.
-  // Grouped so a long list stays browsable. "Verified" here just means the
-  // id matches a model known to exist on NVIDIA's catalog; the rest are
-  // included because they were requested, but may 404 if NVIDIA doesn't
-  // publish them under that exact id — the field is editable either way,
-  // so paste the exact id from your own build.nvidia.com page if one fails.
-  const NVIDIA_MODEL_GROUPS = [
-    { label: 'Coding', ids: [
-      'qwen/qwen2.5-coder-32b-instruct',
-      'mistralai/codestral-22b',
-      'meta/codellama-70b-instruct',
-      'ibm/granite-34b-code-instruct',
-      'qwen/qwen3-coder-next',
-      'qwen/qwen3-coder-30b',
-      'kimi/kimi-k2.7-code',
-      'deepseek-ai/deepseek-v4-flash',
-    ] },
-    { label: 'Reasoning & agents', ids: [
-      'deepseek-ai/deepseek-r1',
-      'deepseek-ai/deepseek-r1-distill-llama-70b',
-      'deepseek-ai/deepseek-v4-pro',
-      'nvidia/llama-3.1-nemotron-70b-instruct',
-      'nvidia/nemotron-3-ultra-550b-a55b',
-      'z-ai/glm-5.2',
-      'kimi/kimi-k3',
-      'kimi/kimi-k2.6',
-      'minimax/minimax-m3',
-      'minimax/minimax-m2.7',
-      'poolside/laguna-xs-2.1',
-      'thinkingmachines/inkling',
-    ] },
-    { label: 'Large general', ids: [
-      'meta/llama-3.1-405b-instruct',
-      'meta/llama-3.3-70b-instruct',
-      'meta/llama-3.1-70b-instruct',
-      'meta/llama-3.1-8b-instruct',
-      'qwen/qwen2.5-72b-instruct',
-      'qwen/qwen3.6-plus',
-      'microsoft/phi-3-medium-4k-instruct',
-      'microsoft/phi-3.5-moe-instruct',
-      'google/gemma-2-27b-it',
-      'google/gemma-4-31b-it',
-      '01-ai/yi-large',
-    ] },
-    { label: 'Chat & multilingual', ids: [
-      'mistralai/mixtral-8x22b-instruct-v0.1',
-      'mistralai/mistral-large',
-      'mistralai/mistral-large-2',
-      'mistralai/mistral-medium-3.5-128b',
-      'community/gpt-oss-120B',
-      'community/gpt-oss-20b',
-      'sarvam/sarvam-m',
-    ] },
+  // NVIDIA NIM model catalog — full list surfaced in the searchable picker.
+  const NVIDIA_NIM_MODELS = [
+    { category: 'Reasoning', name: 'GLM 5.2',                  id: 'z.ai/glm-5.2' },
+    { category: 'Reasoning', name: 'Nemotron 3 Ultra',          id: 'nvidia/nemotron-3-ultra-550b-a55b' },
+    { category: 'Reasoning', name: 'DeepSeek V4',               id: 'deepseek-ai/deepseek-v4-pro' },
+    { category: 'Reasoning', name: 'DeepSeek Flash',            id: 'deepseek-ai/deepseek-v4-flash' },
+    { category: 'Reasoning', name: 'Kimi K3',                   id: 'kimi/kimi-k3' },
+    { category: 'Reasoning', name: 'Kimi K2.7 Code',            id: 'kimi/kimi-k2.7-code' },
+    { category: 'Reasoning', name: 'Kimi K2.6',                 id: 'kimi/kimi-k2.6' },
+    { category: 'Reasoning', name: 'Laguna XS 2.1',             id: 'poolside/laguna-xs-2.1' },
+    { category: 'Reasoning', name: 'Thinking Machines Inkling', id: 'thinkingmachines/inkling' },
+    { category: 'Reasoning', name: 'MiniMax M3',                id: 'minimax/minimax-m3' },
+    { category: 'Reasoning', name: 'MiniMax M2.7',              id: 'minimax/minimax-m2.7' },
+    { category: 'Coding',    name: 'Codestral 22B',             id: 'mistralai/codestral-22b' },
+    { category: 'Coding',    name: 'Mistral Medium 3.5',        id: 'mistralai/mistral-medium-3.5-128b' },
+    { category: 'Coding',    name: 'CodeLlama 70B',             id: 'meta/codellama-70b-instruct' },
+    { category: 'Coding',    name: 'Qwen 3 Coder Next',         id: 'qwen/qwen3-coder-next' },
+    { category: 'Coding',    name: 'Qwen 3 Coder 30B',          id: 'qwen/qwen3-coder-30b' },
+    { category: 'Deep Thinking', name: 'Llama 3.1 405B',        id: 'meta/llama-3.1-405b-instruct' },
+    { category: 'Deep Thinking', name: 'Llama 3.1 70B',         id: 'meta/llama-3.1-70b-instruct' },
+    { category: 'Deep Thinking', name: 'Qwen 2.5 72B',          id: 'qwen/qwen-2.5-72b-instruct' },
+    { category: 'Deep Thinking', name: 'Qwen 3.6 Plus',         id: 'qwen/qwen3.6-plus' },
+    { category: 'Deep Thinking', name: 'Phi 3.5 MoE',           id: 'microsoft/phi-3.5-moe-instruct' },
+    { category: 'Deep Thinking', name: 'Gemma 4 31B',           id: 'google/gemma-4-31b-it' },
+    { category: 'Voice & Audio', name: 'Magpie ZeroShot',       id: 'nvidia/magpie-tts-zeroshot' },
+    { category: 'Voice & Audio', name: 'Magpie Flow',           id: 'nvidia/magpie-tts-flow' },
+    { category: 'Voice & Audio', name: 'Nemotron Voice',        id: 'nvidia/nemotron-voicechat' },
+    { category: 'Voice & Audio', name: 'PersonaPlex',           id: 'nvidia/personaplex' },
+    { category: 'Voice & Audio', name: 'Magpie Multilingual',   id: 'nvidia/magpie-tts-multilingual' },
+    { category: 'Voice & Audio', name: 'Ressemble Chatterbox',  id: 'resemble.ai/chatterbox-multilingual-tts' },
+    { category: 'Voice & Audio', name: 'Nemotron Speech Streaming', id: 'nvidia/nemotron-speech-streaming-en-0.6b' },
+    { category: 'Voice & Audio', name: 'Parakeet CTC',          id: 'nvidia/parakeet-ctc-0.6b-en' },
+    { category: 'Voice & Audio', name: 'Parakeet TDT',          id: 'nvidia/parakeet-tdt' },
+    { category: 'Voice & Audio', name: 'Canary',                id: 'nvidia/canary' },
+    { category: 'Chat & RAG',    name: 'Mistral Large 2',       id: 'mistralai/mistral-large-2' },
+    { category: 'Chat & RAG',    name: 'Gemma 2 27B',           id: 'google/gemma-2-27b-it' },
+    { category: 'Chat & RAG',    name: 'GPT OSS 120B',          id: 'community/gpt-oss-120B' },
+    { category: 'Chat & RAG',    name: 'GPT OSS 20B',           id: 'community/gpt-oss-20b' },
+    { category: 'Chat & RAG',    name: 'Sarvam M',              id: 'sarvam/sarvam-m' },
+    { category: 'Chat & RAG',    name: 'Nemotron Embed',        id: 'nvidia/nemotron-3-embed-1b' },
+    { category: 'Chat & RAG',    name: 'Content Safety',        id: 'nvidia/nemotron-3.5-content-safety' },
+    { category: 'Vision & Industrial', name: 'Ising Calibration', id: 'nvidia/ising-calibration-1.5-31b' },
+    { category: 'Vision & Industrial', name: 'Qwen Image Edit', id: 'nvidia/qwen-image-edit-nvpcb-ovsl2sl' },
   ];
+
+  // Render the searchable NIM model list filtered by `query`.
+  function renderNimList(query) {
+    const q = (query || '').toLowerCase();
+    const filtered = q
+      ? NVIDIA_NIM_MODELS.filter((m) =>
+          m.name.toLowerCase().includes(q) ||
+          m.id.toLowerCase().includes(q) ||
+          m.category.toLowerCase().includes(q))
+      : NVIDIA_NIM_MODELS;
+    el.nimList.innerHTML = '';
+    if (!filtered.length) {
+      const empty = document.createElement('div');
+      empty.className = 'px-3 py-2 text-xs text-slate-500 text-center';
+      empty.textContent = 'No models found';
+      el.nimList.appendChild(empty);
+      return;
+    }
+    filtered.forEach((item) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'nim-row w-full flex items-center justify-between gap-2 px-2.5 py-2 text-left border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors';
+      row.innerHTML =
+        `<div class="min-w-0"><div class="text-[12px] font-medium text-slate-200 truncate">${item.name}</div>` +
+        `<div class="text-[10px] text-slate-500 truncate">${item.id}</div></div>` +
+        `<span class="shrink-0 rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-500">${item.category}</span>`;
+      row.addEventListener('click', () => {
+        el.mfModel.value = item.id;
+        if (!el.mfLabel.value) el.mfLabel.value = item.name;
+        el.nimList.querySelectorAll('.nim-row').forEach((r) => r.classList.remove('bg-brand-500/15', 'text-white'));
+        row.classList.add('bg-brand-500/15');
+      });
+      el.nimList.appendChild(row);
+    });
+  }
 
   // Adjust the form fields to the selected provider.
   function configureModelForm(type) {
@@ -3035,23 +3062,10 @@
     el.mfModel.placeholder = meta.model;
     el.mfEndpoint.placeholder = meta.endpoint;
     el.mfEndpointOpt.textContent = meta.optional ? '(optional — official endpoint used if blank)' : '';
-    el.mfModelSuggestions.innerHTML = '';
     if (type === 'nvidia') {
       el.mfModelSuggestions.classList.remove('view-hidden');
-      NVIDIA_MODEL_GROUPS.forEach((group) => {
-        const heading = document.createElement('div');
-        heading.className = 'w-full pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600';
-        heading.textContent = group.label;
-        el.mfModelSuggestions.appendChild(heading);
-        group.ids.forEach((id) => {
-          const chip = document.createElement('button');
-          chip.type = 'button';
-          chip.className = 'chip btn rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white';
-          chip.textContent = id;
-          chip.addEventListener('click', () => { el.mfModel.value = id; });
-          el.mfModelSuggestions.appendChild(chip);
-        });
-      });
+      el.nimSearch.value = '';
+      renderNimList('');
     } else {
       el.mfModelSuggestions.classList.add('view-hidden');
     }
@@ -4868,6 +4882,7 @@ loop();
   $('#btn-save-model').addEventListener('click', saveModel);
   $('#btn-cancel-model').addEventListener('click', hideModelForm);
   el.mfType.addEventListener('change', () => configureModelForm(el.mfType.value));
+  el.nimSearch.addEventListener('input', () => renderNimList(el.nimSearch.value));
   document.querySelectorAll('.stab').forEach((b) => b.addEventListener('click', () => setSettingsTab(b.dataset.stab)));
   // Quick model switcher in the chat panel — mirrors Settings → Models
   el.quickModelSelect.addEventListener('change', () => onModelPickerChange(el.quickModelSelect));
