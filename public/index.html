@@ -678,6 +678,21 @@
       <!-- TAB: Models ------------------------------------------------ -->
       <div id="stab-models" class="view-hidden">
         <p class="mb-3 text-sm text-slate-400">Add unlimited models from any company and pick the active one.</p>
+
+        <!-- NVIDIA NIM quick access — one key unlocks all 41 models -->
+        <div class="mb-4 rounded-2xl border border-brand-500/30 bg-brand-500/5 p-4">
+          <div class="mb-2 flex items-center gap-2">
+            <span class="text-sm font-semibold text-slate-200">⚡ NVIDIA NIM — 41 Models</span>
+            <span id="nim-key-badge" class="view-hidden rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">Unlocked</span>
+          </div>
+          <p class="mb-2 text-[11px] text-slate-500">Enter your <code class="text-brand-400">nvapi-…</code> key once to unlock all 41 models and <b class="text-white">Dismantle</b> mode directly in the picker.</p>
+          <div class="flex gap-2">
+            <input id="nim-api-key" type="password" placeholder="nvapi-…" autocomplete="off" class="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 outline-none focus:border-brand-400/60" />
+            <button id="btn-save-nim-key" class="btn btn-primary shrink-0 rounded-xl px-4 py-2 text-sm font-semibold text-white">Unlock</button>
+          </div>
+          <button id="btn-clear-nim-key" class="view-hidden mt-2 text-[11px] text-slate-600 hover:text-rose-400">Remove key</button>
+        </div>
+
         <div id="models-list" class="space-y-2"></div>
 
         <button id="btn-add-model" class="btn glass mt-4 flex w-full items-center justify-center gap-2 rounded-xl border-dashed px-4 py-2.5 text-sm font-semibold text-slate-200 hover:border-white/25 hover:bg-white/10">
@@ -1068,6 +1083,7 @@
     mailbox: { address: null, incoming: [], sent: [] }, // team join requests
     models: JSON.parse(localStorage.getItem('aws_models') || '[]'),
     activeModelId: localStorage.getItem('aws_active_model') || null, // null = server default
+    nvidiaKey: localStorage.getItem('aws_nvidia_key') || '',
     secrets: JSON.parse(localStorage.getItem('aws_secrets') || '[]'),
     prefs: Object.assign({ thorough: true, autoDeploy: false, clarify: true },
       JSON.parse(localStorage.getItem('aws_prefs') || '{}')),
@@ -1167,6 +1183,10 @@
     mfModelSuggestions: $('#mf-model-suggestions'),
     nimSearch:          $('#mf-nim-search'),
     nimList:            $('#mf-nim-list'),
+    nimApiKey:          $('#nim-api-key'),
+    nimKeyBadge:        $('#nim-key-badge'),
+    btnSaveNimKey:      $('#btn-save-nim-key'),
+    btnClearNimKey:     $('#btn-clear-nim-key'),
     // voice cloning
     voiceStatus:      $('#voice-status'),
     voiceScript:      $('#voice-script'),
@@ -1451,9 +1471,9 @@
   // (NVIDIA Magpie zero-shot), otherwise the built-in Indian-accent TTS ----------
   let ttsAudio = null;
 
-  // Reuses the key from any NVIDIA NIM model the user already added, so
-  // cloning doesn't need a second key pasted somewhere else.
+  // Returns the NVIDIA API key — from the quick-setup field first, then from any added NVIDIA model.
   function nvidiaKeyFromModels() {
+    if (state.nvidiaKey) return state.nvidiaKey;
     const m = state.models.find((x) => x.type === 'nvidia' && x.apiKey);
     return m ? m.apiKey : undefined;
   }
@@ -1472,7 +1492,7 @@
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok || !d.audio) { toast(d.error || 'Voice unavailable — set HF_API_TOKEN', 'error'); return; }
-      if (d.cloneError) toast(`Your cloned voice failed, used the default: ${d.cloneError}`.slice(0, 200), 'error');
+      if (d.cloneError) console.warn('Voice clone fell back to default:', d.cloneError);
       ttsAudio = new Audio(d.audio);
       label.textContent = d.voice === 'cloned' ? 'Playing (your voice)…' : 'Playing…';
       ttsAudio.play();
@@ -1964,6 +1984,16 @@
     // every added model as a wide fallback chain in "All Models" mode.
     if ((isAllModelsMode() || isOrchestraMode()) && state.models.length) {
       payload.providers = allModelProviders();
+    } else if (isDismantleMode() && state.nvidiaKey) {
+      // Dismantle: cascade through all 41 NVIDIA NIM models
+      payload.providers = NVIDIA_NIM_MODELS.map((m) => ({
+        type: 'openai', endpoint: 'https://integrate.api.nvidia.com/v1',
+        apiKey: state.nvidiaKey, model: m.id, label: m.name,
+      }));
+    } else if (isNvidiaBuiltin() && state.nvidiaKey) {
+      // A specific NVIDIA built-in model selected from the dropdown
+      const modelId = state.activeModelId.replace(NVIDIA_BUILTIN_PREFIX, '');
+      payload.provider = { type: 'openai', endpoint: 'https://integrate.api.nvidia.com/v1', apiKey: state.nvidiaKey, model: modelId };
     } else if (model) {
       payload.provider = { type: model.type || 'openai', endpoint: model.endpoint, apiKey: model.apiKey, model: model.model };
     }
@@ -2904,13 +2934,18 @@
 
   const ALL_MODELS_ID = '__all__';
   const ORCHESTRA_ID = '__orchestra__';
-  function isAllModelsMode() { return state.activeModelId === ALL_MODELS_ID; }
-  function isOrchestraMode() { return state.activeModelId === ORCHESTRA_ID; }
+  const DISMANTLE_ID = '__nvidia_dismantle__';
+  const NVIDIA_BUILTIN_PREFIX = '__nvidia__';
+
+  function isAllModelsMode()  { return state.activeModelId === ALL_MODELS_ID; }
+  function isOrchestraMode()  { return state.activeModelId === ORCHESTRA_ID; }
+  function isDismantleMode()  { return state.activeModelId === DISMANTLE_ID; }
+  function isNvidiaBuiltin()  { return typeof state.activeModelId === 'string' && state.activeModelId.startsWith(NVIDIA_BUILTIN_PREFIX) && !isDismantleMode(); }
 
   // Returns the provider config for the active custom model, or null
   // when the server default (or a multi-model mode) should be used.
   function activeModel() {
-    if (!state.activeModelId || isAllModelsMode() || isOrchestraMode()) return null;
+    if (!state.activeModelId || isAllModelsMode() || isOrchestraMode() || isDismantleMode() || isNvidiaBuiltin()) return null;
     return state.models.find((m) => m.id === state.activeModelId) || null;
   }
 
@@ -2934,11 +2969,12 @@
   // not the platform's — so credits never apply and there's no limit.
   function usingOwnModel() {
     if (isAllModelsMode() || isOrchestraMode()) return state.models.length > 0;
+    if (isDismantleMode() || isNvidiaBuiltin()) return !!state.nvidiaKey;
     return !!activeModel();
   }
 
   function selectModel(id) {
-    state.activeModelId = id; // null = server default, ALL_MODELS_ID = every model
+    state.activeModelId = id;
     persistModels();
     renderModels();
     renderQuickModelSelect();
@@ -2950,6 +2986,12 @@
       toast(state.models.length >= 2
         ? `Orchestra mode — a file each, “${bossLabel}” leads the build`
         : 'Orchestra needs at least 2 models added', state.models.length >= 2 ? 'success' : 'error');
+    } else if (id === DISMANTLE_ID) {
+      toast(state.nvidiaKey ? `Dismantle mode — cascades all 41 NVIDIA NIM models ⚡` : 'Add your NVIDIA key first in Settings → Models', state.nvidiaKey ? 'success' : 'error');
+    } else if (isNvidiaBuiltin()) {
+      const modelId = id.replace(NVIDIA_BUILTIN_PREFIX, '');
+      const nim = NVIDIA_NIM_MODELS.find((m) => m.id === modelId);
+      toast(nim ? `Using “${nim.name}” (NVIDIA NIM) — unlimited ⚡` : `Using NVIDIA model`, 'success');
     } else {
       const m = activeModel();
       toast(m ? `Using “${m.label}” — unlimited, no credits used` : 'Using server default model', 'success');
@@ -3252,6 +3294,27 @@
         opt.textContent = `${m.label} · ${PROVIDER_NAMES[m.type] || 'OpenAI'}`;
         sel.appendChild(opt);
       });
+
+      // NVIDIA NIM built-in models (when key is set) — Dismantle + all 41
+      if (state.nvidiaKey) {
+        const optDismantle = document.createElement('option');
+        optDismantle.value = DISMANTLE_ID;
+        optDismantle.textContent = '⚡ Dismantle — All 41 NVIDIA';
+        sel.appendChild(optDismantle);
+        const categories = [...new Set(NVIDIA_NIM_MODELS.map((m) => m.category))];
+        categories.forEach((cat) => {
+          const grp = document.createElement('optgroup');
+          grp.label = `NVIDIA · ${cat}`;
+          NVIDIA_NIM_MODELS.filter((m) => m.category === cat).forEach((m) => {
+            const opt = document.createElement('option');
+            opt.value = NVIDIA_BUILTIN_PREFIX + m.id;
+            opt.textContent = m.name;
+            grp.appendChild(opt);
+          });
+          sel.appendChild(grp);
+        });
+      }
+
       // "+ Add a model…" so the picker is also the way in to adding one.
       const optAdd = document.createElement('option');
       optAdd.value = '__add__';
@@ -3265,6 +3328,17 @@
     if (sel.value === '__add__') {
       sel.value = state.activeModelId || '';
       gate(() => { openSettings('models'); showModelForm(null); });
+      return;
+    }
+    // NVIDIA built-in models (Dismantle or specific model)
+    if (sel.value === DISMANTLE_ID || (sel.value && sel.value.startsWith(NVIDIA_BUILTIN_PREFIX))) {
+      if (!state.nvidiaKey) {
+        sel.value = state.activeModelId || '';
+        gate(() => openSettings('models'));
+        toast('Enter your NVIDIA key in Settings → Models first', 'error');
+        return;
+      }
+      selectModel(sel.value);
       return;
     }
     selectModel(sel.value || null);
@@ -4883,6 +4957,39 @@ loop();
   $('#btn-cancel-model').addEventListener('click', hideModelForm);
   el.mfType.addEventListener('change', () => configureModelForm(el.mfType.value));
   el.nimSearch.addEventListener('input', () => renderNimList(el.nimSearch.value));
+
+  // NVIDIA NIM quick key setup
+  function saveNvidiaKey(key) {
+    state.nvidiaKey = key;
+    if (key) localStorage.setItem('aws_nvidia_key', key);
+    else localStorage.removeItem('aws_nvidia_key');
+    el.nimKeyBadge.classList.toggle('view-hidden', !key);
+    el.btnClearNimKey.classList.toggle('view-hidden', !key);
+    el.nimApiKey.value = key ? '•'.repeat(12) : '';
+    renderQuickModelSelect();
+    renderCredits();
+  }
+  function renderNimKeyUI() {
+    const has = !!state.nvidiaKey;
+    el.nimKeyBadge.classList.toggle('view-hidden', !has);
+    el.btnClearNimKey.classList.toggle('view-hidden', !has);
+    if (has) el.nimApiKey.value = '•'.repeat(12);
+  }
+  el.btnSaveNimKey.addEventListener('click', () => {
+    const v = el.nimApiKey.value.trim();
+    if (!v || v.startsWith('•')) { toast('Paste your nvapi-… key first', 'error'); return; }
+    if (!v.startsWith('nvapi-') && !v.startsWith('Bearer ')) {
+      toast('Key should start with nvapi-', 'error'); return;
+    }
+    saveNvidiaKey(v);
+    toast('NVIDIA NIM key saved — 41 models now in the picker ⚡', 'success');
+  });
+  el.btnClearNimKey.addEventListener('click', () => {
+    saveNvidiaKey('');
+    if (isDismantleMode() || isNvidiaBuiltin()) selectModel(null);
+    toast('NVIDIA key removed', 'info');
+  });
+  renderNimKeyUI();
   document.querySelectorAll('.stab').forEach((b) => b.addEventListener('click', () => setSettingsTab(b.dataset.stab)));
   // Quick model switcher in the chat panel — mirrors Settings → Models
   el.quickModelSelect.addEventListener('change', () => onModelPickerChange(el.quickModelSelect));
